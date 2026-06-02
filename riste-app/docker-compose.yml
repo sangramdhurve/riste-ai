@@ -1,0 +1,47 @@
+services:
+  riste-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: riste
+      POSTGRES_PASSWORD: riste
+      POSTGRES_DB: riste
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  riste-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  riste-web:
+    build: .
+    restart: unless-stopped
+    command: node server.js
+    env_file: .env
+    depends_on: [riste-db, riste-redis]
+    ports:
+      - "3000:3000"
+
+  riste-worker:
+    build: .
+    restart: unless-stopped
+    command: npm run worker
+    env_file: .env
+    depends_on: [riste-db, riste-redis]
+
+  # Optional: local LLM. Remove if your VPS lacks RAM/GPU and you use Gemini/Groq instead.
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+
+volumes:
+  pgdata:
+  ollama:

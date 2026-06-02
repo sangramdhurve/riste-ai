@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Autonomy {
+  SUPERVISED // AI drafts, you approve everything
+  AUTO_GREETINGS // greetings auto, replies need approval
+  FULL_AUTO // everything sent automatically (with guardrails)
+}
+
+enum ChannelType {
+  EMAIL
+  SMS
+  WHATSAPP
+}
+
+enum Direction {
+  IN
+  OUT
+}
+
+enum MessageStatus {
+  QUEUED
+  AWAITING_APPROVAL // default: drafted, waiting for your explicit approval
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  HELD // escalated: AI flagged it needs a human
+  REJECTED // you discarded the draft
+}
+
+model Contact {
+  id           String           @id @default(cuid())
+  name         String
+  relationship String // mother, friend, partner, colleague...
+  timezone     String           @default("Asia/Kolkata")
+  language     String           @default("en")
+  autonomy     Autonomy         @default(SUPERVISED)
+  morningTime  String? // "08:00" local, null = no morning greeting
+  eveningTime  String? // "21:00" local, null = no evening greeting
+  festivals    String[] // tags this contact celebrates: ["hindu","diwali","birthday:1990-05-12"]
+  active       Boolean          @default(true)
+  channels     ContactChannel[]
+  toneProfile  ToneProfile?
+  messages     Message[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+}
+
+model ContactChannel {
+  id        String      @id @default(cuid())
+  contact   Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId String
+  type      ChannelType
+  value     String // email address / phone number
+  isPrimary Boolean     @default(false)
+
+  @@unique([contactId, type])
+}
+
+model ToneProfile {
+  id             String   @id @default(cuid())
+  contact        Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId      String   @unique
+  sampleMessages String[] // YOUR real past texts to this person (seed the voice)
+  styleNotes     String   @default("") // "short, lots of emojis, calls her Aai, never formal"
+  languageMix    String   @default("") // "Hindi-English mix"
+  doNotSay       String[] // topics/phrases to avoid
+}
+
+model Message {
+  id          String        @id @default(cuid())
+  contact     Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId   String
+  channel     ChannelType
+  direction   Direction
+  body        String
+  status      MessageStatus @default(QUEUED)
+  aiGenerated Boolean       @default(false)
+  confidence  Float?
+  externalId  String? // provider message id, for delivery webhooks
+  createdAt   DateTime      @default(now())
+  sentAt      DateTime?
+
+  @@index([contactId, createdAt])
+  @@index([status])
+}
+
+model Festival {
+  id     String   @id @default(cuid())
+  name   String
+  date   String // YYYY-MM-DD (compared against the contact's local date)
+  tags   String[] // lowercased: "national holiday", "hindu", "observance"...
+  region String   @default("IN")
+  source String   @default("calendarific") // or "manual"
+
+  @@unique([date, name])
+  @@index([date])
+}
+
+model Setting {
+  id              Int      @id @default(1)
+  killSwitch      Boolean  @default(false)
+  quietHoursStart String   @default("22:00")
+  quietHoursEnd   String   @default("07:00")
+  defaultAutonomy Autonomy @default(SUPERVISED)
+  aiProvider      String   @default("ollama")
+  updatedAt       DateTime @updatedAt
+}
