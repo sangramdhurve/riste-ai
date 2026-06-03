@@ -16,6 +16,7 @@ function statusBadge(status: string, direction: string) {
     AWAITING_APPROVAL: ["b-await", "🕒 approve"],
     QUEUED: ["b-await", "🕒 queued"],
     FAILED: ["b-failed", "❌ failed"],
+    REJECTED: ["b-failed", "🗑 rejected"],
   };
   const [cls, label] = map[status] ?? ["", status];
   return <span className={`badge ${cls}`}>{label}</span>;

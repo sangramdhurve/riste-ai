@@ -57,6 +57,16 @@ docker compose exec riste-web npx prisma db push
 # docker compose exec riste-web npx prisma migrate deploy
 ```
 
+## Production: HTTPS, auth, backups
+- **Caddy** (in compose) gives automatic HTTPS + basic-auth on the dashboard. Point
+  `RISTE_DOMAIN`'s DNS at the VPS, set `BASICAUTH_USER` and `BASICAUTH_HASH`
+  (`docker run --rm caddy caddy hash-password --plaintext 'pw'`). Webhooks under
+  `/api/webhooks/*` are intentionally left open — they verify their own secrets.
+- **Backups (S3):** `scripts/backup.sh` does `pg_dump` → gzip → S3 and prunes >14 days.
+  Add a host cron: `0 3 * * * cd /path/riste-app && set -a && . ./.env && ./scripts/backup.sh`.
+  Restore with `scripts/restore.sh riste-YYYYMMDD-HHMMSS.sql.gz`.
+  (Needs `postgresql-client` + `awscli` on the host.)
+
 ## How it works — human is in control by default
 - **Default = approve everything.** New contacts are `SUPERVISED`: every message (greeting
   *and* reply) is drafted and **waits for your tap** — nothing sends on its own.
@@ -147,7 +157,9 @@ your approval.
 - ✅ **Phase 3:** festival/Jayanti + birthday engine (Calendarific) and add-contact UI.
 - ✅ **Phase 4:** WhatsApp Cloud API channel + webhook (`whatsapp.ts` + `/api/webhooks/whatsapp`);
   proactive-greeting template wiring is the remaining config step.
-- **Polish:** long-term conversation memory; contact edit/delete + festivals/calendar view on the dashboard.
+- ✅ **Polish:** contact edit/delete + pause + autonomy controls; festivals **/calendar** view;
+  yearly festival auto-refresh in the worker; Caddy HTTPS + basic-auth; S3 backup/restore scripts.
+  *Remaining: long-term conversation memory; template-wired WhatsApp greetings.*
 
 > Recommendation: run each new contact in `SUPERVISED` for a week, confirm the replies
 > sound like you, then switch to `FULL_AUTO`. Protects the relationships this is built for.

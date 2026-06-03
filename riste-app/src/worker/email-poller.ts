@@ -30,9 +30,9 @@ export function startEmailPoller() {
       await client.connect();
       const lock = await client.getMailboxLock("INBOX");
       try {
-        const unseen = await client.search({ seen: false });
+        const unseen = (await client.search({ seen: false })) || [];
         for (const seq of unseen) {
-          const fetched = await client.fetchOne(seq, { source: true });
+          const fetched = await client.fetchOne(String(seq), { source: true });
           if (!fetched || !fetched.source) continue;
 
           const parsed = await simpleParser(fetched.source);
@@ -45,6 +45,14 @@ export function startEmailPoller() {
           });
           if (!ch) continue; // not a contact — leave it untouched/unread
 
+          if (parsed.messageId) {
+            const seen = await prisma.message.findFirst({ where: { externalId: parsed.messageId } });
+            if (seen) {
+              await client.messageFlagsAdd(String(seq), ["\\Seen"]);
+              continue;
+            }
+          }
+
           const msg = await prisma.message.create({
             data: {
               contactId: ch.contactId,
@@ -56,7 +64,7 @@ export function startEmailPoller() {
             },
           });
           await risteQueue.add("inbound", { type: "inbound", messageId: msg.id });
-          await client.messageFlagsAdd(seq, ["\\Seen"]);
+          await client.messageFlagsAdd(String(seq), ["\\Seen"]);
           console.log(`[email-poller] inbound from ${from} -> contact ${ch.contactId}`);
         }
       } finally {

@@ -1,0 +1,13 @@
+# Caddy reverse proxy: automatic HTTPS + basic-auth on the dashboard.
+# Webhooks are left open (they validate their own secrets) so Telegram/WhatsApp/
+# the SMS gateway can still POST in.
+
+{$RISTE_DOMAIN} {
+	# Protect everything EXCEPT inbound webhooks.
+	@protected not path /api/webhooks/*
+	basic_auth @protected {
+		{$BASICAUTH_USER} {$BASICAUTH_HASH}
+	}
+
+	reverse_proxy riste-web:3000
+}

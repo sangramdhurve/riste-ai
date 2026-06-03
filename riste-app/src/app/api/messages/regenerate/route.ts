@@ -18,10 +18,15 @@ export async function POST(req: Request) {
   });
   if (!contact) return NextResponse.json({ error: "no contact" }, { status: 404 });
 
-  const history = await prisma.message.findMany({
-    where: { contactId: contact.id },
-    orderBy: { createdAt: "asc" },
+  const recent = await prisma.message.findMany({
+    where: {
+      contactId: contact.id,
+      OR: [{ direction: "IN" }, { status: { in: ["SENT", "DELIVERED", "READ"] } }],
+    },
+    orderBy: { createdAt: "desc" },
+    take: 20,
   });
+  const history = recent.reverse();
 
   const { text, confidence } = await generate(buildVoiceSystemPrompt(contact), replyUserPrompt(history));
   const updated = await prisma.message.update({

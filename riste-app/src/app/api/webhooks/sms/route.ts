@@ -25,6 +25,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "missing phone/message" }, { status: 400 });
   }
 
+  // Idempotency: skip if the gateway already delivered this message id.
+  if (externalId) {
+    const seen = await prisma.message.findFirst({ where: { externalId } });
+    if (seen) return NextResponse.json({ ok: true, duplicate: true });
+  }
+
   // Match by last 10 digits so +91XXXXXXXXXX, 0XXXXXXXXXX, etc. all resolve.
   const want = digits(phone).slice(-10);
   const smsChannels = await prisma.contactChannel.findMany({ where: { type: "SMS" } });

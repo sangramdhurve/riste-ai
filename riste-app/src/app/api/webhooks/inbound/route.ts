@@ -18,6 +18,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "need channel, body, and contactId or from" }, { status: 400 });
   }
 
+  // Idempotency: skip if we've already stored this provider message id.
+  if (b.externalId) {
+    const seen = await prisma.message.findFirst({ where: { externalId: b.externalId } });
+    if (seen) return NextResponse.json({ ok: true, duplicate: true });
+  }
+
   let contactId = b.contactId as string | undefined;
   if (!contactId && b.from) {
     const ch = await prisma.contactChannel.findFirst({

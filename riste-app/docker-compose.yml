@@ -33,6 +33,22 @@ services:
     env_file: .env
     depends_on: [riste-db, riste-redis]
 
+  # Reverse proxy: automatic HTTPS + basic-auth on the dashboard (webhooks stay open).
+  # Set RISTE_DOMAIN, BASICAUTH_USER, BASICAUTH_HASH in .env. Generate the hash with:
+  #   docker run --rm caddy caddy hash-password --plaintext 'yourpassword'
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [riste-web]
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
   # Optional: local LLM. Remove if your VPS lacks RAM/GPU and you use Gemini/Groq instead.
   ollama:
     image: ollama/ollama:latest
@@ -45,3 +61,5 @@ services:
 volumes:
   pgdata:
   ollama:
+  caddy_data:
+  caddy_config:

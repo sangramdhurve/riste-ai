@@ -79,10 +79,17 @@ export async function processInbound(job: InboundJob) {
   const ch = primaryChannel(contact);
   if (!ch) return;
 
-  const history = await prisma.message.findMany({
-    where: { contactId: contact.id },
-    orderBy: { createdAt: "asc" },
+  // Only real conversation: their messages + replies we actually SENT.
+  // Excludes unsent/rejected drafts, and is capped so we don't blow up tokens.
+  const recent = await prisma.message.findMany({
+    where: {
+      contactId: contact.id,
+      OR: [{ direction: "IN" }, { status: { in: ["SENT", "DELIVERED", "READ"] } }],
+    },
+    orderBy: { createdAt: "desc" },
+    take: 20,
   });
+  const history = recent.reverse();
 
   const { text, escalate, confidence } = await generate(
     buildVoiceSystemPrompt(contact),

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import AddContactForm from "../_components/AddContactForm";
+import ContactControls from "../_components/ContactControls";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ export default async function Contacts() {
           <div style={{ flex: 1 }}>
             <div>
               <span className="who">{c.name}</span> <span className="rel">· {c.relationship}</span>
+              {!c.active && <span className="badge b-held" style={{ marginLeft: 8 }}>paused</span>}
             </div>
             <div className="meta">
               {c.channels.map((ch) => `${ch.type.toLowerCase()}: ${ch.value}`).join(" · ")}
@@ -40,8 +42,8 @@ export default async function Contacts() {
               {c.morningTime ? `🌅 ${c.morningTime}` : ""} {c.eveningTime ? `🌙 ${c.eveningTime}` : ""} ·{" "}
               {c._count.messages} messages
             </div>
+            <ContactControls id={c.id} autonomy={c.autonomy} active={c.active} />
           </div>
-          <span className="badge">{c.autonomy.toLowerCase().replace("_", "-")}</span>
         </div>
       ))}
     </>

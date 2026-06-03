@@ -36,6 +36,12 @@ export async function POST(req: Request) {
         const text: string | undefined = m.text?.body;
         if (!from || !text) continue;
 
+        // Idempotency: Meta retries webhooks, so skip messages we've already stored.
+        if (m.id) {
+          const seen = await prisma.message.findFirst({ where: { externalId: m.id } });
+          if (seen) continue;
+        }
+
         const want = digits(from).slice(-10);
         const waChannels = await prisma.contactChannel.findMany({ where: { type: "WHATSAPP" } });
         const match = waChannels.find((c) => digits(c.value).slice(-10) === want);

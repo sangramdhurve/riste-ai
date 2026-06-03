@@ -18,6 +18,9 @@ RUN npm run build
 # ---- Runtime ----
 FROM base AS runner
 ENV NODE_ENV=production
+# Standalone server must bind to 0.0.0.0 so Caddy / other containers can reach it.
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 # Next.js standalone output (for riste-web)
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
@@ -27,5 +30,8 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/src ./src
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/package.json ./package.json
+# tsconfig is REQUIRED at runtime: the worker runs via tsx and resolves the
+# "@/..." path aliases from it.
+COPY --from=build /app/tsconfig.json ./tsconfig.json
 EXPOSE 3000
 CMD ["node", "server.js"]

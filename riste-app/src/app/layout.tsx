@@ -16,6 +16,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <span className="grow" />
             <a href="/">Activity</a>
             <a href="/contacts">Contacts</a>
+            <a href="/calendar">Calendar</a>
           </nav>
           {children}
         </div>
