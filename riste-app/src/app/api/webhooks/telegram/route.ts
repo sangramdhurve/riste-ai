@@ -32,8 +32,11 @@ export async function POST(req: Request) {
   const [action, messageId] = String(cb.data ?? "").split(":");
   try {
     if (action === "approve") {
-      await sendNow(messageId);
-      await answerCallback(cb.id, "✅ Sent");
+      const result = await sendNow(messageId, undefined, { manual: true });
+      await answerCallback(
+        cb.id,
+        result.status === "SENT" ? "✅ Sent" : `⚠️ Blocked: ${result.heldReason ?? "held"}`
+      );
     } else if (action === "reject") {
       await prisma.message.update({ where: { id: messageId }, data: { status: "REJECTED" } });
       await answerCallback(cb.id, "🗑 Rejected");

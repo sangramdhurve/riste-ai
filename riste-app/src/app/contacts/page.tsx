@@ -42,7 +42,18 @@ export default async function Contacts() {
               {c.morningTime ? `🌅 ${c.morningTime}` : ""} {c.eveningTime ? `🌙 ${c.eveningTime}` : ""} ·{" "}
               {c._count.messages} messages
             </div>
-            <ContactControls id={c.id} autonomy={c.autonomy} active={c.active} />
+            <ContactControls
+              id={c.id}
+              autonomy={c.autonomy}
+              active={c.active}
+              channels={c.channels.map((ch) => ({
+                id: ch.id,
+                type: ch.type,
+                value: ch.value,
+                consentStatus: ch.consentStatus,
+                optedOutAt: ch.optedOutAt,
+              }))}
+            />
           </div>
         </div>
       ))}

@@ -1,26 +1,13 @@
 import { prisma } from "@/lib/db";
 import { risteQueue } from "@/lib/queue";
 import { matchSpecialDay } from "@/lib/festivals/match";
+import { localHHMM, localDate } from "@/lib/time";
 
 /**
  * Simple minute-tick scheduler. Every minute it checks each active contact's
  * local time; if it matches their morning/evening slot, it enqueues a greeting.
  * On festival/birthday days the special wish replaces the morning greeting.
  */
-function localHHMM(timezone: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date());
-}
-
-function localDate(timezone: string): string {
-  // YYYY-MM-DD in the contact's timezone (for daily dedup keys).
-  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
-}
-
 export function startScheduler() {
   // Deterministic jobId = one greeting per contact/slot/day. Re-adding the same
   // id is a no-op, so duplicate ticks or worker restarts can't double-send.

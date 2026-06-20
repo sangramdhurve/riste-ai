@@ -9,5 +9,9 @@ export type SendResult = { externalId?: string };
  */
 export interface Channel {
   type: ChannelType;
-  send(to: string, body: string, opts?: { subject?: string }): Promise<SendResult>;
+  send(
+    to: string,
+    body: string,
+    opts?: { subject?: string; unsubscribeUrl?: string }
+  ): Promise<SendResult>;
 }

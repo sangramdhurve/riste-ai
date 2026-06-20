@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { risteQueue } from "@/lib/queue";
+import { recordInboundReply } from "@/lib/analytics";
+import { isOptOut } from "@/lib/optout";
+import { recordAudit } from "@/lib/audit";
 
 const digits = (s: string) => s.replace(/\D/g, "");
 
@@ -47,17 +50,30 @@ export async function POST(req: Request) {
         const match = waChannels.find((c) => digits(c.value).slice(-10) === want);
         if (!match) continue;
 
+        const cleanText = text.trim();
         const msg = await prisma.message.create({
           data: {
             contactId: match.contactId,
             channel: "WHATSAPP",
             direction: "IN",
-            body: text.trim(),
+            body: cleanText,
             status: "DELIVERED",
             externalId: m.id ?? null,
           },
         });
+        recordAudit({ contactId: match.contactId, channel: "WHATSAPP", direction: "IN", body: cleanText, externalId: m.id });
+
+        // Honour opt-out: flip consent and do NOT draft a reply.
+        if (isOptOut(cleanText)) {
+          await prisma.contactChannel.update({
+            where: { id: match.id },
+            data: { consentStatus: "REVOKED", optedOutAt: new Date() },
+          });
+          continue;
+        }
+
         await risteQueue.add("inbound", { type: "inbound", messageId: msg.id });
+        await recordInboundReply(match.contactId, "WHATSAPP");
       }
 
       for (const s of value.statuses ?? []) {

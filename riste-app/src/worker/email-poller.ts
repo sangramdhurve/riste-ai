@@ -2,6 +2,9 @@ import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { prisma } from "@/lib/db";
 import { risteQueue } from "@/lib/queue";
+import { recordInboundReply } from "@/lib/analytics";
+import { isOptOut } from "@/lib/optout";
+import { recordAudit } from "@/lib/audit";
 
 /**
  * Gmail IMAP reply reader. Every minute it checks INBOX for unseen mail, and
@@ -63,7 +66,20 @@ export function startEmailPoller() {
               externalId: parsed.messageId ?? null,
             },
           });
+          recordAudit({ contactId: ch.contactId, channel: "EMAIL", direction: "IN", body, externalId: parsed.messageId });
+
+          // Honour opt-out replies (e.g. "unsubscribe"): flip consent, skip reply.
+          if (isOptOut(body)) {
+            await prisma.contactChannel.update({
+              where: { id: ch.id },
+              data: { consentStatus: "REVOKED", optedOutAt: new Date() },
+            });
+            await client.messageFlagsAdd(String(seq), ["\\Seen"]);
+            continue;
+          }
+
           await risteQueue.add("inbound", { type: "inbound", messageId: msg.id });
+          await recordInboundReply(ch.contactId, "EMAIL");
           await client.messageFlagsAdd(String(seq), ["\\Seen"]);
           console.log(`[email-poller] inbound from ${from} -> contact ${ch.contactId}`);
         }

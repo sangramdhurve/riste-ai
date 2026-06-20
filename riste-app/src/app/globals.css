@@ -65,3 +65,27 @@ h2 { font-size: 15px; color: var(--muted); text-transform: uppercase; letter-spa
   border-radius: 8px; padding: 8px; font: inherit;
 }
 @media (max-width: 600px) { .form .grid2 { grid-template-columns: 1fr; } }
+
+/* --- metrics dashboard --- */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.stat {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 10px; padding: 14px 16px;
+}
+.stat .num { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat .label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.stat .target { font-size: 11px; color: var(--muted); margin-top: 8px; }
+.stat.go { border-color: var(--green); }
+.stat.no { border-color: var(--red); }
+.stat .num.go { color: var(--green); }
+.stat .num.no { color: var(--red); }
+.verdict {
+  background: var(--card); border: 1px solid var(--line); border-left-width: 4px;
+  border-radius: 10px; padding: 14px 16px; margin-bottom: 16px;
+}
+.verdict.go { border-left-color: var(--green); }
+.verdict.no { border-left-color: var(--red); }
+.verdict.wait { border-left-color: var(--amber); }
+.verdict h3 { margin: 0 0 4px; font-size: 16px; }
+.verdict p { margin: 0; color: var(--muted); font-size: 13px; }
+@media (max-width: 600px) { .stats { grid-template-columns: 1fr 1fr; } }

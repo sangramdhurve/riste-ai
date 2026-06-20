@@ -1,0 +1,165 @@
+import { prisma } from "@/lib/db";
+
+export const dynamic = "force-dynamic";
+
+// --- Phase 1 kill/go thresholds (see the launch plan) ---
+const VERBATIM_TARGET = 0.5; // >50% of approved drafts sent unchanged → voice capture works
+const APPROVAL_TARGET = 0.6; // >60% of decisions are approvals → drafts are usable
+const MIN_DECISIONS = 10; // below this, the sample is too small to judge
+
+function pct(n: number, d: number): number | null {
+  return d === 0 ? null : n / d;
+}
+const fmtPct = (r: number | null) => (r === null ? "—" : `${Math.round(r * 100)}%`);
+
+function Stat({
+  num,
+  label,
+  target,
+  state,
+}: {
+  num: string;
+  label: string;
+  target?: string;
+  state?: "go" | "no";
+}) {
+  return (
+    <div className={`stat ${state ?? ""}`}>
+      <div className={`num ${state ?? ""}`}>{num}</div>
+      <div className="label">{label}</div>
+      {target && <div className="target">{target}</div>}
+    </div>
+  );
+}
+
+export default async function Metrics() {
+  const grouped = await prisma.event.groupBy({ by: ["type"], _count: { _all: true } });
+  const c: Record<string, number> = {};
+  for (const g of grouped) c[g.type] = g._count._all;
+
+  const draftCreated = c["draft_created"] ?? 0;
+  const approved = c["approved"] ?? 0;
+  const approvedEdited = c["approved_edited"] ?? 0;
+  const rejected = c["rejected"] ?? 0;
+  const regenerated = c["regenerated"] ?? 0;
+  const autoSent = c["auto_sent"] ?? 0;
+  const sent = c["sent"] ?? 0;
+  const held = c["held"] ?? 0;
+
+  const approvals = approved + approvedEdited;
+  const decisions = approvals + rejected;
+
+  const approvalRate = pct(approvals, decisions);
+  const verbatimRate = pct(approved, approvals);
+  const regenRate = pct(regenerated, draftCreated);
+
+  // Reply rate within 48h: of outbound messages we actually sent, how many got a
+  // reply within two days. The signal that we're keeping relationships warm.
+  const outSent = await prisma.message.findMany({
+    where: { direction: "OUT", status: { in: ["SENT", "DELIVERED", "READ"] }, sentAt: { not: null } },
+    select: { sentAt: true, replyReceivedAt: true },
+  });
+  const repliedIn48 = outSent.filter(
+    (m) =>
+      m.replyReceivedAt &&
+      m.sentAt &&
+      m.replyReceivedAt.getTime() - m.sentAt.getTime() <= 48 * 3600 * 1000
+  ).length;
+  const replyRate = pct(repliedIn48, outSent.length);
+
+  // Median edit distance among messages you actually edited.
+  const edited = await prisma.message.findMany({
+    where: { editDistance: { not: null } },
+    select: { editDistance: true },
+  });
+  const dists = edited.map((e) => e.editDistance!).sort((a, b) => a - b);
+  const medianEdit = dists.length ? dists[Math.floor(dists.length / 2)] : 0;
+
+  // Rough time-saved estimate: a verbatim send saves ~40s of composing, an edited
+  // one ~20s. Directional, not exact.
+  const timeSavedMin = Math.round((approved * 40 + approvedEdited * 20) / 60);
+
+  const verbatimGo = verbatimRate !== null && verbatimRate >= VERBATIM_TARGET;
+  const approvalGo = approvalRate !== null && approvalRate >= APPROVAL_TARGET;
+
+  let verdict: { cls: string; title: string; body: string };
+  if (decisions < MIN_DECISIONS) {
+    verdict = {
+      cls: "wait",
+      title: "⏳ Not enough data yet",
+      body: `Make at least ${MIN_DECISIONS} approve/reject decisions in the pilot before reading the verdict. So far: ${decisions}.`,
+    };
+  } else if (verbatimGo && approvalGo) {
+    verdict = {
+      cls: "go",
+      title: "✅ GO — the idea is validated",
+      body: "You send most drafts unchanged and approve most of what's drafted. Voice capture works. Proceed to Phase 2 (consent/safety) and then the SaaS build.",
+    };
+  } else {
+    const why = !verbatimGo
+      ? "You're editing too many drafts — the 'in your voice' promise isn't landing yet."
+      : "Too many drafts get rejected — draft quality is the gap.";
+    verdict = {
+      cls: "no",
+      title: "⚠️ Not yet — improve drafts before building further",
+      body: `${why} Tune the tone profiles / prompts and re-measure before investing in multi-tenancy.`,
+    };
+  }
+
+  return (
+    <>
+      <h2>Validation verdict</h2>
+      <div className={`verdict ${verdict.cls}`}>
+        <h3>{verdict.title}</h3>
+        <p>{verdict.body}</p>
+      </div>
+
+      <h2>Core signals</h2>
+      <div className="stats">
+        <Stat
+          num={fmtPct(verbatimRate)}
+          label="Sent verbatim (of approved)"
+          target={`target ≥ ${Math.round(VERBATIM_TARGET * 100)}%`}
+          state={verbatimRate === null ? undefined : verbatimGo ? "go" : "no"}
+        />
+        <Stat
+          num={fmtPct(approvalRate)}
+          label="Approval rate (approved vs rejected)"
+          target={`target ≥ ${Math.round(APPROVAL_TARGET * 100)}%`}
+          state={approvalRate === null ? undefined : approvalGo ? "go" : "no"}
+        />
+        <Stat
+          num={fmtPct(replyRate)}
+          label="Reply within 48h"
+          target={`${repliedIn48}/${outSent.length} sent`}
+        />
+      </div>
+
+      <h2>Drafting</h2>
+      <div className="stats">
+        <Stat num={String(draftCreated)} label="Drafts created" />
+        <Stat num={fmtPct(regenRate)} label="Regenerated (of drafts)" target="high = bad drafts" />
+        <Stat num={String(medianEdit)} label="Median edit distance (chars)" />
+      </div>
+
+      <h2>Outcomes</h2>
+      <div className="stats">
+        <Stat num={String(sent)} label="Total sent" />
+        <Stat num={String(autoSent)} label="Auto-sent" />
+        <Stat num={String(held)} label="Held / escalated" />
+      </div>
+
+      <h2>Decisions</h2>
+      <div className="stats">
+        <Stat num={String(approved)} label="Approved as-is" />
+        <Stat num={String(approvedEdited)} label="Approved after edit" />
+        <Stat num={String(rejected)} label="Rejected" />
+      </div>
+
+      <h2>Estimated time saved</h2>
+      <div className="stats">
+        <Stat num={`~${timeSavedMin} min`} label="Composing time saved (estimate)" />
+      </div>
+    </>
+  );
+}

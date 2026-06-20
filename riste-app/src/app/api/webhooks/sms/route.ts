@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { risteQueue } from "@/lib/queue";
+import { recordInboundReply } from "@/lib/analytics";
+import { isOptOut } from "@/lib/optout";
+import { recordAudit } from "@/lib/audit";
 
 /**
  * Inbound SMS from the android-sms-gateway "sms:received" webhook.
@@ -37,16 +40,29 @@ export async function POST(req: Request) {
   const match = smsChannels.find((c) => digits(c.value).slice(-10) === want);
   if (!match) return NextResponse.json({ error: "unknown sender" }, { status: 404 });
 
+  const cleanText = text.trim();
   const msg = await prisma.message.create({
     data: {
       contactId: match.contactId,
       channel: "SMS",
       direction: "IN",
-      body: text.trim(),
+      body: cleanText,
       status: "DELIVERED",
       externalId: externalId ?? null,
     },
   });
+  recordAudit({ contactId: match.contactId, channel: "SMS", direction: "IN", body: cleanText, externalId });
+
+  // Honour opt-out: flip consent and do NOT draft a reply.
+  if (isOptOut(cleanText)) {
+    await prisma.contactChannel.update({
+      where: { id: match.id },
+      data: { consentStatus: "REVOKED", optedOutAt: new Date() },
+    });
+    return NextResponse.json({ ok: true, optedOut: true });
+  }
+
   await risteQueue.add("inbound", { type: "inbound", messageId: msg.id });
+  await recordInboundReply(match.contactId, "SMS");
   return NextResponse.json({ ok: true, messageId: msg.id });
 }

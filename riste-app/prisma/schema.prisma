@@ -19,6 +19,13 @@ enum ChannelType {
   WHATSAPP
 }
 
+enum ConsentStatus {
+  UNKNOWN // never confirmed — we do not send (default)
+  PENDING // asked, awaiting confirmation
+  GRANTED // recipient agreed to receive messages
+  REVOKED // recipient opted out (STOP / unsubscribe)
+}
+
 enum Direction {
   IN
   OUT
@@ -60,6 +67,11 @@ model ContactChannel {
   type      ChannelType
   value     String // email address / phone number
   isPrimary Boolean     @default(false)
+  // --- Phase 2 consent / anti-spam ---
+  consentStatus ConsentStatus @default(UNKNOWN) // we never send unless GRANTED
+  consentSource String? // "verbal" | "double_opt_in" | "imported" | "reply_confirmed"
+  consentAt     DateTime?
+  optedOutAt    DateTime? // set on STOP / unsubscribe — a hard, permanent block
 
   @@unique([contactId, type])
 }
@@ -75,21 +87,58 @@ model ToneProfile {
 }
 
 model Message {
-  id          String        @id @default(cuid())
-  contact     Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  id           String        @id @default(cuid())
+  contact      Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId    String
+  channel      ChannelType
+  direction    Direction
+  body         String
+  status       MessageStatus @default(QUEUED)
+  aiGenerated  Boolean       @default(false)
+  confidence   Float?
+  externalId   String? // provider message id, for delivery webhooks
+  // --- Phase 1 validation instrumentation ---
+  originalBody    String? // the AI's first draft, snapshotted so edit distance survives in-place edits
+  editDistance    Int? // chars changed between AI draft and what was actually sent (authenticity signal)
+  heldReason      String? // why this was escalated/held
+  replyReceivedAt DateTime? // when the recipient replied to this outbound (reply-rate signal)
+  replySentiment  String? // optional later: positive/neutral/negative classification of the reply
+  createdAt    DateTime      @default(now())
+  sentAt       DateTime?
+
+  @@index([contactId, createdAt])
+  @@index([status])
+}
+
+// Append-only product-analytics stream for the Phase 1 validation pilot.
+// One row per meaningful action so we can measure whether the idea works:
+// approval rate, verbatim-send rate, regen rate, reply rate, time saved.
+model Event {
+  id        String       @id @default(cuid())
+  type      String // draft_created | approved | approved_edited | rejected | regenerated | sent | auto_sent | failed | held | reply_received
+  messageId String?
+  contactId String?
+  channel   ChannelType?
+  meta      Json? // { editDistance, confidence, slot, festival, latencyMs, ... }
+  createdAt DateTime     @default(now())
+
+  @@index([type, createdAt])
+  @@index([contactId])
+}
+
+// Immutable record of everything actually sent and received. Kept separate from
+// the mutable Message table so consent/abuse investigations have a clean trail.
+model AuditLog {
+  id          String      @id @default(cuid())
   contactId   String
   channel     ChannelType
   direction   Direction
   body        String
-  status      MessageStatus @default(QUEUED)
-  aiGenerated Boolean       @default(false)
-  confidence  Float?
-  externalId  String? // provider message id, for delivery webhooks
-  createdAt   DateTime      @default(now())
-  sentAt      DateTime?
+  externalId  String?
+  aiGenerated Boolean     @default(false)
+  createdAt   DateTime    @default(now())
 
   @@index([contactId, createdAt])
-  @@index([status])
 }
 
 model Festival {
@@ -111,5 +160,10 @@ model Setting {
   quietHoursEnd   String   @default("07:00")
   defaultAutonomy Autonomy @default(SUPERVISED)
   aiProvider      String   @default("ollama")
+  // --- Phase 2 consent / anti-spam / disclosure ---
+  requireConsent      Boolean @default(true) // block sends to non-GRANTED channels
+  maxPerContactPerDay Int     @default(2) // rolling-24h send cap per contact+channel
+  aiDisclosure        Boolean @default(false) // append a "sent with help from AI" line to greetings
+  disclosureText      String  @default("")
   updatedAt       DateTime @updatedAt
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { generate } from "@/lib/ai/engine";
 import { buildVoiceSystemPrompt, replyUserPrompt } from "@/lib/ai/prompt";
+import { logEvent } from "@/lib/analytics";
 
 /**
  * Ask the AI for a fresh draft of a pending message (keeps it awaiting approval).
@@ -29,9 +30,18 @@ export async function POST(req: Request) {
   const history = recent.reverse();
 
   const { text, confidence } = await generate(buildVoiceSystemPrompt(contact), replyUserPrompt(history));
+  // The fresh draft becomes the new baseline, so a later edit-distance measures
+  // against the AI's most recent attempt, not a discarded earlier one.
   const updated = await prisma.message.update({
     where: { id },
-    data: { body: text, confidence, status: "AWAITING_APPROVAL" },
+    data: { body: text, originalBody: text, confidence, status: "AWAITING_APPROVAL" },
+  });
+  logEvent({
+    type: "regenerated",
+    messageId: id,
+    contactId: updated.contactId,
+    channel: updated.channel,
+    meta: { confidence },
   });
   return NextResponse.json(updated);
 }

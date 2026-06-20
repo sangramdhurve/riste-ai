@@ -15,7 +15,18 @@ async function main() {
         eveningTime: "21:00",
         autonomy: "SUPERVISED",
         festivals: ["hindu"],
-        channels: { create: [{ type: "EMAIL", value: "demo@example.com", isPrimary: true }] },
+        channels: {
+          create: [
+            {
+              type: "EMAIL",
+              value: "demo@example.com",
+              isPrimary: true,
+              consentStatus: "GRANTED",
+              consentSource: "imported",
+              consentAt: new Date(),
+            },
+          ],
+        },
         toneProfile: {
           create: {
             sampleMessages: ["yo what's up", "haha all good bro", "let's catch up soon 😄"],
