@@ -23,6 +23,9 @@ export type GreetingJob = {
   festival?: string;
 };
 export type InboundJob = { type: "inbound"; messageId: string };
-export type RisteJob = GreetingJob | InboundJob;
+export type RemindersJob = { type: "reminders"; contactId: string };
+export type ReminderDraftJob = { type: "reminderDraft"; reminderId: string };
+export type ExtractNotesJob = { type: "extractNotes"; messageId: string };
+export type RisteJob = GreetingJob | InboundJob | RemindersJob | ReminderDraftJob | ExtractNotesJob;
 
 export const risteQueue = new Queue<RisteJob>("riste", { connection });

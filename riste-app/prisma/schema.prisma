@@ -56,17 +56,19 @@ model Contact {
   channels     ContactChannel[]
   toneProfile  ToneProfile?
   messages     Message[]
+  notes        Note[]
+  reminders    Reminder[]
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 }
 
 model ContactChannel {
-  id        String      @id @default(cuid())
-  contact   Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  contactId String
-  type      ChannelType
-  value     String // email address / phone number
-  isPrimary Boolean     @default(false)
+  id            String        @id @default(cuid())
+  contact       Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId     String
+  type          ChannelType
+  value         String // email address / phone number
+  isPrimary     Boolean       @default(false)
   // --- Phase 2 consent / anti-spam ---
   consentStatus ConsentStatus @default(UNKNOWN) // we never send unless GRANTED
   consentSource String? // "verbal" | "double_opt_in" | "imported" | "reply_confirmed"
@@ -87,24 +89,27 @@ model ToneProfile {
 }
 
 model Message {
-  id           String        @id @default(cuid())
-  contact      Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  contactId    String
-  channel      ChannelType
-  direction    Direction
-  body         String
-  status       MessageStatus @default(QUEUED)
-  aiGenerated  Boolean       @default(false)
-  confidence   Float?
-  externalId   String? // provider message id, for delivery webhooks
+  id              String        @id @default(cuid())
+  contact         Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId       String
+  channel         ChannelType
+  direction       Direction
+  body            String
+  status          MessageStatus @default(QUEUED)
+  aiGenerated     Boolean       @default(false)
+  confidence      Float?
+  externalId      String? // provider message id, for delivery webhooks
   // --- Phase 1 validation instrumentation ---
   originalBody    String? // the AI's first draft, snapshotted so edit distance survives in-place edits
   editDistance    Int? // chars changed between AI draft and what was actually sent (authenticity signal)
   heldReason      String? // why this was escalated/held
   replyReceivedAt DateTime? // when the recipient replied to this outbound (reply-rate signal)
   replySentiment  String? // optional later: positive/neutral/negative classification of the reply
-  createdAt    DateTime      @default(now())
-  sentAt       DateTime?
+  createdAt       DateTime      @default(now())
+  sentAt          DateTime?
+  notes           Note[] // notebook suggestions read from this message
+  reminder        Reminder?     @relation(fields: [reminderId], references: [id], onDelete: SetNull)
+  reminderId      String? // set when the user asked for this draft from a notebook reminder
 
   @@index([contactId, createdAt])
   @@index([status])
@@ -141,6 +146,86 @@ model AuditLog {
   @@index([contactId, createdAt])
 }
 
+enum NoteKind {
+  FACT // something to remember: kids' names, likes, job
+  EVENT // something happening on a date: exam, surgery, trip
+  PROMISE // something the user said they'd do: "I'll send you that book"
+}
+
+enum NoteStatus {
+  PROPOSED // suggested by the AI from a message; unused until the user keeps it
+  ACTIVE
+  DONE
+  DISMISSED // a suggestion the user rejected; kept so it isn't suggested again
+}
+
+enum NoteSource {
+  MANUAL
+  AI
+}
+
+// The relationship notebook (Phase 5): what each person has told the user.
+// Non-sensitive ACTIVE notes are given to the AI as background when drafting;
+// sensitive ones (health, grief, money, conflict) are for the user only.
+model Note {
+  id              String     @id @default(cuid())
+  contact         Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId       String
+  kind            NoteKind   @default(FACT)
+  text            String
+  eventDate       String? // YYYY-MM-DD in the contact's local calendar (event day / promise due date)
+  sensitive       Boolean    @default(false)
+  status          NoteStatus @default(ACTIVE)
+  doneAt          DateTime?
+  snoozedUntil    String? // YYYY-MM-DD: no reminders before this day; one fires on it
+  source          NoteSource @default(MANUAL)
+  sourceMessage   Message?   @relation(fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  sourceMessageId String? // the message an AI suggestion was read from
+  reminders       Reminder[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([contactId, status])
+}
+
+enum ReminderReason {
+  EVENT_TODAY // the event is today
+  EVENT_AFTER // the event was yesterday: ask how it went
+  EVENT_CHECKIN // a week after a private (health/grief/...) event
+  PROMISE_DUE // a promise's due date is today
+  PROMISE_OPEN // a promise is still open: 3 days, then weekly
+  SNOOZE_END // a snoozed note comes back
+}
+
+enum ReminderStatus {
+  OPEN
+  DONE // the user acted on it
+  DRAFTED // the user asked for a message draft
+  SNOOZED
+  DISMISSED
+}
+
+// One nudge for the user, generated by the daily reminder run. Unique per note
+// per day so a rerun can never notify twice.
+model Reminder {
+  id         String         @id @default(cuid())
+  note       Note           @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  noteId     String
+  contact    Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId  String
+  dueDate    String // YYYY-MM-DD in the contact's local calendar
+  reason     ReminderReason
+  text       String // rendered once at creation so the dashboard and Telegram agree
+  status     ReminderStatus @default(OPEN)
+  notifiedAt DateTime?
+  actedAt    DateTime?
+  messages   Message[]
+  createdAt  DateTime       @default(now())
+
+  @@unique([noteId, dueDate])
+  @@index([status, dueDate])
+}
+
 model Festival {
   id     String   @id @default(cuid())
   name   String
@@ -154,16 +239,29 @@ model Festival {
 }
 
 model Setting {
-  id              Int      @id @default(1)
-  killSwitch      Boolean  @default(false)
-  quietHoursStart String   @default("22:00")
-  quietHoursEnd   String   @default("07:00")
-  defaultAutonomy Autonomy @default(SUPERVISED)
-  aiProvider      String   @default("ollama")
+  id                  Int       @id @default(1)
+  killSwitch          Boolean   @default(false)
+  quietHoursStart     String    @default("22:00")
+  quietHoursEnd       String    @default("07:00")
+  defaultAutonomy     Autonomy  @default(SUPERVISED)
+  aiProvider          String    @default("ollama")
   // --- Phase 2 consent / anti-spam / disclosure ---
-  requireConsent      Boolean @default(true) // block sends to non-GRANTED channels
-  maxPerContactPerDay Int     @default(2) // rolling-24h send cap per contact+channel
-  aiDisclosure        Boolean @default(false) // append a "sent with help from AI" line to greetings
-  disclosureText      String  @default("")
-  updatedAt       DateTime @updatedAt
+  requireConsent      Boolean   @default(true) // block sends to non-GRANTED channels
+  maxPerContactPerDay Int       @default(2) // rolling-24h send cap per contact+channel
+  aiDisclosure        Boolean   @default(false) // append a "sent with help from AI" line to greetings
+  disclosureText      String    @default("")
+  // --- Phase 5 notebook ---
+  reminderTime        String    @default("09:30") // contact-local time of the daily reminder run
+  pilotStartedAt      DateTime? // the notebook pilot counts only what happens after this
+  updatedAt           DateTime  @updatedAt
+}
+
+// Last-known health of the background loops, for the pilot readiness check.
+// `error` is a short plain-language summary for the operator, never a raw error.
+model Heartbeat {
+  key       String    @id // "scheduler" | "email-poller"
+  okAt      DateTime?
+  errorAt   DateTime?
+  error     String?
+  updatedAt DateTime  @updatedAt
 }

@@ -6,7 +6,12 @@ import { notifyOperator } from "@/lib/notify";
 import { logEvent } from "@/lib/analytics";
 import { getSetting } from "@/lib/settings";
 import { decideSend } from "@/lib/autonomy";
-import type { GreetingJob, InboundJob } from "@/lib/queue";
+import { loadDraftNotes } from "@/lib/notes";
+import { reminderDraftPrompt } from "@/lib/notes/reminders";
+import { runDailyReminders, toReminderNote } from "@/lib/reminders";
+import { queueNoteSuggestions, suggestNotesFromMessage } from "@/lib/notes/suggest";
+import { localDate } from "@/lib/time";
+import type { ExtractNotesJob, GreetingJob, InboundJob, ReminderDraftJob, RemindersJob } from "@/lib/queue";
 
 function primaryChannel(contact: { channels: { type: any; value: string; isPrimary: boolean }[] }) {
   return contact.channels.find((c) => c.isPrimary) ?? contact.channels[0];
@@ -26,9 +31,10 @@ export async function processGreeting(job: GreetingJob) {
   if (!ch) return;
 
   const t0 = Date.now();
+  const notes = await loadDraftNotes(contact.id, contact.timezone);
   const { text, escalate } = await generate(
-    buildVoiceSystemPrompt(contact),
-    greetingUserPrompt(job.slot, job.festival)
+    buildVoiceSystemPrompt(contact, notes),
+    greetingUserPrompt(job.slot, job.festival, notes)
   );
   const latencyMs = Date.now() - t0;
 
@@ -80,18 +86,26 @@ export async function processGreeting(job: GreetingJob) {
 
 /** Inbound: their reply arrived; draft + (by default) wait for your approval. */
 export async function processInbound(job: InboundJob) {
-  const s = await getSetting();
-  if (s.killSwitch) return;
-
   const incoming = await prisma.message.findUnique({ where: { id: job.messageId } });
   if (!incoming) return;
+  // Suggesting notes only reads the message and waits for the user's review, so
+  // it runs even when the kill switch or a paused contact stops the reply.
+  await queueNoteSuggestions(incoming.id, incoming.body).catch((e) => console.error("[notes] queue failed:", e));
+
+  const s = await getSetting();
+  if (s.killSwitch) return;
 
   const contact = await prisma.contact.findUnique({
     where: { id: incoming.contactId },
     include: { toneProfile: true, channels: true },
   });
   if (!contact || !contact.active) return;
-  const ch = primaryChannel(contact);
+  // Reply on the channel their message actually arrived on (they may have
+  // written on a non-primary channel); fall back to primary only if needed.
+  const ch =
+    contact.channels.find((c) => c.type === incoming.channel && c.isPrimary) ??
+    contact.channels.find((c) => c.type === incoming.channel) ??
+    primaryChannel(contact);
   if (!ch) return;
 
   // Only real conversation: their messages + replies we actually SENT.
@@ -107,8 +121,9 @@ export async function processInbound(job: InboundJob) {
   const history = recent.reverse();
 
   const t0 = Date.now();
+  const notes = await loadDraftNotes(contact.id, contact.timezone);
   const { text, escalate, confidence } = await generate(
-    buildVoiceSystemPrompt(contact),
+    buildVoiceSystemPrompt(contact, notes),
     replyUserPrompt(history)
   );
   const latencyMs = Date.now() - t0;
@@ -160,4 +175,75 @@ export async function processInbound(job: InboundJob) {
       reason: escalate ? "held" : "awaiting_approval",
     });
   }
+}
+
+/** Daily notebook check for one contact: create and push today's reminders. */
+export async function processReminders(job: RemindersJob) {
+  const n = await runDailyReminders(job.contactId);
+  if (n) console.log(`[reminders] ${n} new for contact ${job.contactId}`);
+}
+
+/**
+ * The user tapped "Draft a message" on a reminder. Draft it in their voice and
+ * put it in the approval queue: these always wait for a tap, whatever the
+ * contact's autonomy, because the user asked to see a draft.
+ */
+export async function processReminderDraft(job: ReminderDraftJob) {
+  const s = await getSetting();
+  if (s.killSwitch) return;
+
+  const r = await prisma.reminder.findUnique({
+    where: { id: job.reminderId },
+    include: { note: true, contact: { include: { toneProfile: true, channels: true } } },
+  });
+  if (!r) return;
+  const contact = r.contact;
+  const prompt = reminderDraftPrompt(r.reason, toReminderNote(r.note, contact.timezone), localDate(contact.timezone));
+  if (!prompt) return; // private notes never become drafts
+  const ch = primaryChannel(contact);
+  if (!ch) return;
+
+  const notes = await loadDraftNotes(contact.id, contact.timezone);
+  const t0 = Date.now();
+  const { text, escalate, confidence } = await generate(buildVoiceSystemPrompt(contact, notes), prompt);
+  const status = escalate ? "HELD" : "AWAITING_APPROVAL";
+
+  const msg = await prisma.message.create({
+    data: {
+      contactId: contact.id,
+      channel: ch.type,
+      direction: "OUT",
+      body: text,
+      originalBody: text,
+      aiGenerated: true,
+      confidence,
+      status,
+      heldReason: escalate ? "escalate" : null,
+      reminderId: r.id,
+    },
+  });
+  logEvent({
+    type: "draft_created",
+    messageId: msg.id,
+    contactId: contact.id,
+    channel: ch.type,
+    meta: { kind: "reminder", reminderId: r.id, reason: r.reason, latencyMs: Date.now() - t0, escalate },
+  });
+  if (escalate) {
+    logEvent({ type: "held", messageId: msg.id, contactId: contact.id, channel: ch.type, meta: { reason: "escalate" } });
+  }
+  await notifyOperator({
+    messageId: msg.id,
+    contactName: contact.name,
+    relationship: contact.relationship,
+    channel: ch.type,
+    body: text,
+    reason: escalate ? "held" : "awaiting_approval",
+  });
+}
+
+/** Read a message and suggest notebook notes for the user to review. */
+export async function processExtractNotes(job: ExtractNotesJob) {
+  const n = await suggestNotesFromMessage(job.messageId);
+  if (n) console.log(`[notes] ${n} suggested from message ${job.messageId}`);
 }

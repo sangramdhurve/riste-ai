@@ -9,13 +9,13 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "${RISTE_DB_PORT:-5432}:5432"
 
   riste-redis:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${RISTE_REDIS_PORT:-6379}:6379"
 
   riste-web:
     build: .
@@ -29,7 +29,9 @@ services:
   riste-worker:
     build: .
     restart: unless-stopped
-    command: npm run worker
+    # Apply pending migrations before starting, so a fresh deploy never runs
+    # against an empty/stale schema (web only reads; worker owns the schema).
+    command: sh -c "npx prisma migrate deploy && npm run worker"
     env_file: .env
     depends_on: [riste-db, riste-redis]
 

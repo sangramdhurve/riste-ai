@@ -4,6 +4,7 @@ import { logEvent } from "@/lib/analytics";
 import { canSend } from "@/lib/guardrails";
 import { recordAudit } from "@/lib/audit";
 import { notifyOperator } from "@/lib/notify";
+import { queueNoteSuggestions } from "@/lib/notes/suggest";
 
 /**
  * Single place that actually sends a message and records the result.
@@ -86,6 +87,8 @@ export async function sendNow(messageId: string, overrideBody?: string, opts?: {
       externalId,
       aiGenerated: msg.aiGenerated,
     });
+    // Anything sent in the user's name may contain a promise worth tracking.
+    await queueNoteSuggestions(messageId, text).catch((e) => console.error("[notes] queue failed:", e));
     return updated;
   } catch (err) {
     await prisma.message.update({ where: { id: messageId }, data: { status: "FAILED" } });

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { risteQueue } from "@/lib/queue";
+import { recordInboundReply } from "@/lib/analytics";
+import { isOptOut } from "@/lib/optout";
+import { recordAudit } from "@/lib/audit";
 
 /**
  * Inbound messages land here. The email poller, SMS gateway, and (later)
@@ -25,25 +28,47 @@ export async function POST(req: Request) {
   }
 
   let contactId = b.contactId as string | undefined;
+  let channelId: string | undefined;
   if (!contactId && b.from) {
     const ch = await prisma.contactChannel.findFirst({
       where: { type: b.channel, value: b.from },
     });
     if (!ch) return NextResponse.json({ error: "unknown sender" }, { status: 404 });
     contactId = ch.contactId;
+    channelId = ch.id;
   }
 
+  const cleanText = String(b.body).trim();
   const message = await prisma.message.create({
     data: {
       contactId: contactId!,
       channel: b.channel,
       direction: "IN",
-      body: b.body,
+      body: cleanText,
       status: "DELIVERED",
       externalId: b.externalId ?? null,
     },
   });
+  recordAudit({ contactId: contactId!, channel: b.channel, direction: "IN", body: cleanText, externalId: b.externalId });
+
+  // Honour opt-out: flip consent on the matching channel and do NOT draft a reply.
+  if (isOptOut(cleanText)) {
+    if (!channelId) {
+      const ch = await prisma.contactChannel.findFirst({
+        where: { contactId: contactId!, type: b.channel },
+      });
+      channelId = ch?.id;
+    }
+    if (channelId) {
+      await prisma.contactChannel.update({
+        where: { id: channelId },
+        data: { consentStatus: "REVOKED", optedOutAt: new Date() },
+      });
+    }
+    return NextResponse.json({ ok: true, optedOut: true });
+  }
 
   await risteQueue.add("inbound", { type: "inbound", messageId: message.id });
+  await recordInboundReply(contactId!, b.channel);
   return NextResponse.json({ ok: true, messageId: message.id });
 }

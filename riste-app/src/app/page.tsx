@@ -1,5 +1,9 @@
 import { prisma } from "@/lib/db";
 import MessageActions from "./_components/MessageActions";
+import ReminderActions from "./_components/ReminderActions";
+import ProposedNote from "./_components/ProposedNote";
+import { localDate } from "@/lib/time";
+import { relativeDay } from "@/lib/notes/select";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +33,71 @@ export default async function Home() {
     take: 50,
   });
   const attention = recent.filter((m) => m.status === "HELD" || m.status === "AWAITING_APPROVAL");
+  // Open reminders from the last week whose note is still active (finishing or
+  // deleting the note in the notebook makes its reminders moot).
+  const reminders = await prisma.reminder.findMany({
+    where: { status: "OPEN", createdAt: { gte: new Date(Date.now() - 7 * 86_400_000) }, note: { status: "ACTIVE" } },
+    include: { contact: true, note: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const suggestions = await prisma.note.findMany({
+    where: { status: "PROPOSED" },
+    include: { contact: true, sourceMessage: { select: { direction: true, body: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+  });
 
   return (
     <>
+      {reminders.length > 0 && (
+        <>
+          <h2>📓 Reminders ({reminders.length})</h2>
+          {reminders.map((r) => {
+            const when = relativeDay(r.dueDate, localDate(r.contact.timezone));
+            return (
+              <div className="row" key={r.id}>
+                <div className="time">{when}</div>
+                <div style={{ flex: 1 }}>
+                  <div>
+                    <a className="who" href={`/contacts/${r.contactId}`}>
+                      {r.contact.name}
+                    </a>{" "}
+                    <span className="rel">· {r.contact.relationship}</span>
+                  </div>
+                  <div className="body">{r.text}</div>
+                  <ReminderActions id={r.id} canDraft={!r.note.sensitive} />
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {suggestions.length > 0 && (
+        <>
+          <h2>📝 Notes to review ({suggestions.length})</h2>
+          <p className="meta" style={{ marginTop: -4, marginBottom: 12 }}>
+            Picked out of recent messages. Nothing here is used until you keep it.
+          </p>
+          {suggestions.map((n) => (
+            <ProposedNote
+              key={n.id}
+              today={localDate(n.contact.timezone)}
+              contact={{ id: n.contactId, name: n.contact.name, relationship: n.contact.relationship }}
+              note={{
+                id: n.id,
+                kind: n.kind,
+                text: n.text,
+                eventDate: n.eventDate,
+                sensitive: n.sensitive,
+                source: n.sourceMessage,
+              }}
+            />
+          ))}
+        </>
+      )}
+
       <h2>Needs your attention ({attention.length})</h2>
       {attention.length === 0 && <div className="empty">Nothing waiting. 🎉</div>}
       {attention.map((m) => (

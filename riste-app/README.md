@@ -16,19 +16,21 @@ human-in-the-loop safety net, and the operator dashboard.
 riste-app/
 ├── docker-compose.yml      # postgres, redis, web, worker, (ollama)
 ├── Dockerfile
-├── prisma/schema.prisma    # Contact, ContactChannel, ToneProfile, Message, Setting
+├── prisma/schema.prisma    # Contact, ContactChannel, ToneProfile, Note, Message, Setting
+├── prisma/migrations/      # committed migrations (applied on worker start in Docker)
 ├── prisma/seed.ts
 └── src/
     ├── app/                # Next.js dashboard + API
     │   ├── page.tsx        # Activity feed + "Needs your attention"
-    │   ├── contacts/       # Contacts view
+    │   ├── contacts/       # Contacts view; contacts/[id] = per-person notebook
     │   └── api/            # contacts, webhooks/inbound, messages/approve, settings/killswitch
     ├── lib/
     │   ├── db.ts           # Prisma client
     │   ├── queue.ts        # BullMQ queue + Redis
-    │   ├── ai/             # engine.ts (providers) + prompt.ts (your voice)
+    │   ├── ai/             # engine.ts (providers) + prompt.ts (your voice + notebook notes)
+    │   ├── notes/          # notebook: which notes drafts may use, private-topic check, validation
     │   └── channels/       # types.ts (interface) + email.ts + index.ts (registry)
-    └── worker/             # index.ts, scheduler.ts, processors.ts
+    └── worker/             # env.ts (loads .env first), index.ts, scheduler.ts, processors.ts
 ```
 
 ## Run locally
@@ -43,7 +45,11 @@ npm run db:seed               # optional: demo contact + settings
 # two processes:
 npm run dev                   # dashboard at http://localhost:3000
 npm run worker:dev            # scheduler + job processor
+npm test                      # unit tests
 ```
+
+If ports 5432/6379 are already taken by another project, set `RISTE_DB_PORT` / `RISTE_REDIS_PORT`
+in `.env` (e.g. 5433 / 6380) and point `DATABASE_URL` / `REDIS_URL` at the same ports.
 
 To use local AI: `docker compose up -d ollama && docker exec -it <ollama> ollama pull llama3.1:8b`,
 or set `AI_PROVIDER=groq` / `gemini` with the matching API key in `.env`.
@@ -51,10 +57,8 @@ or set `AI_PROVIDER=groq` / `gemini` with the matching API key in `.env`.
 ## Run everything in Docker (VPS)
 ```bash
 docker compose up -d --build
-# First stand-up (no committed migrations yet): create the tables directly.
-docker compose exec riste-web npx prisma db push
-# Once you've committed migrations (prisma migrate dev locally), use instead:
-# docker compose exec riste-web npx prisma migrate deploy
+# The worker runs `prisma migrate deploy` before it starts, so the schema is created/updated
+# automatically from the committed migrations in prisma/migrations.
 ```
 
 ## Production: HTTPS, auth, backups
@@ -106,8 +110,86 @@ docker compose exec riste-web npx prisma db push
 
 ### Still open (deliberate, later phases or need external setup)
 - **Tone seeding is manual** (paste past messages via the contacts API / seed) — no import UI yet.
-- **No dashboard auth / tests** — single-operator; run behind your VPS auth (e.g. Caddy basic-auth).
+- **No dashboard auth** — single-operator; run behind your VPS auth (e.g. Caddy basic-auth).
 - SMS, festival engine, and WhatsApp need external accounts/devices — see roadmap.
+
+## Relationship notebook (Phase 5)
+Each contact has a notebook at **Contacts → 📓** (`/contacts/<id>`). Three kinds of note:
+**Remember** (facts: kids' names, likes, job), **Event** (with a date: exam, trip, surgery) and
+**Promise** (what you said you'd do, optional due date). Mark notes done, edit, delete, or
+**Forget everything about <name>** to wipe all their notes (messages and settings stay).
+
+How drafts use them:
+- Only **active, non-private** notes reach the AI, quoted as background facts (never instructions).
+  Dated events are included from 7 days before to 14 days after; facts and promises are capped.
+- An event **today or tomorrow** is worked into that day's greeting ("good luck with the exam").
+- **Private notes** (health, grief, money, conflict) are never used in any message. Notes that look
+  personal are made private automatically (English + Hindi keyword check); untick if it's fine.
+- Notes are kept when someone replies STOP; they're your memory, not a way to message them.
+
+API: `GET|POST|DELETE /api/contacts/<id>/notes` (list / add `{kind, text, eventDate?, sensitive?}` /
+forget all), `PATCH|DELETE /api/notes/<noteId>` (edit any field or `{status: "DONE"|"ACTIVE"}`).
+
+### Reminders (step 2)
+Every day at **09:30 in each contact's timezone** (`Setting.reminderTime`), the worker checks the
+notebook and creates reminders. They appear at the top of the dashboard and, if Telegram is set up,
+as a Telegram message with buttons. If the worker starts late it catches up the same day; each
+note reminds at most once a day.
+
+| Note | Reminds you |
+|---|---|
+| Event | on the day ("Today: exam. Send a quick message?") and the day after ("ask how it went") |
+| Private event (health, grief…) | also one week later ("check in on them") |
+| Promise with a due date | on the due date, 3 days late, then weekly until done |
+| Promise without a date | 3 days after you noted it, then weekly until done |
+
+Actions (dashboard or Telegram): **Done** (on a promise this also marks the promise kept),
+**Draft a message** (an AI draft in your voice that waits in *Needs your attention*; reminder
+drafts always need your approval, whatever the contact's autonomy; not offered for private notes),
+**Snooze** (tomorrow / next week; the note stays quiet until then and reminds once on that day),
+**Dismiss**. API: `POST /api/reminders/<id> {action: "done"|"draft"|"snooze"|"dismiss", days?: 1|7}`.
+
+### Suggested notes (step 3)
+Riste reads conversations and **suggests** notes; nothing is used until you keep it.
+- **Their messages:** after the reply draft is under way, a lower-priority job (15 s later, behind
+  other work) reads each incoming message and suggests up to 3 facts or events about them.
+- **What you send:** every message sent in your name (including approved AI drafts) is read for
+  promises you made ("I'll send you the book this weekend" → Promise, due Saturday).
+- Suggestions appear under **Notes to review** on the home page and **Suggested from messages** on
+  the contact's page, with the message they came from. **Keep** (edit kind/text/date/private first
+  if needed) or **Not useful**. Dismissed suggestions are remembered and not suggested again.
+- Safety: incoming messages are treated as data; they can never create a promise; suggestions with
+  links or long numbers are dropped; messages that try to instruct the AI ("ignore previous
+  instructions…") are skipped; short messages ("ok 👍") are skipped; money/health/grief/conflict
+  suggestions are private. The model gets a two-week calendar so "next Monday" resolves correctly.
+
+### Running the pilot (step 4)
+The goal and success criteria are in the architecture doc (§9, Phase 5). **Metrics → Notebook
+pilot** scores them live; **Ready for the pilot?** below it shows what still needs setting up.
+
+Before you start:
+1. **Email:** put your real Gmail address and a Gmail *app password* in `.env`
+   (`SMTP_USER`, `SMTP_PASS`; `IMAP_HOST` for reading replies). "Reading replies" turns green
+   within a minute of the worker restarting.
+2. **Phone notifications:** create a Telegram bot, set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`,
+   and register the webhook (see *Your controls* above). Approvals and reminders then reach your phone.
+3. **2–3 real contacts:** add them with at least 3 of your real past messages each, and grant
+   consent on their channel. Keep them `SUPERVISED`.
+4. **Keep the worker running** for the whole two weeks ("Background service" must stay green).
+5. Press **Start the two-week pilot**. Only activity after that counts, so testing beforehand never
+   skews the result. You can restart or stop it from the same place.
+
+During the pilot: review **Notes to review** and **Reminders** on the home page as they come in.
+Reminders left open for 7 days count as ignored.
+
+| Criterion | Target | How it's measured |
+|---|---|---|
+| Useful memory | ≥ 70% | suggestions kept ÷ suggestions you decided on |
+| Useful reminders | ≥ 50% | reminders marked done or drafted ÷ (acted + dismissed + ignored); snoozes don't count |
+| Real contact | ≥ 3 | messages drafted from a reminder that actually went out |
+| Safety | 0 | messages sent without your approval that mention one of that contact's private notes |
+
+The verdict waits for 10 suggestion decisions and 10 handled reminders, and is only final after day 14.
 
 ## SMS setup (android-sms-gateway)
 1. Install the app from https://github.com/capcom6/android-sms-gateway on your phone; enable
@@ -159,7 +241,11 @@ your approval.
   proactive-greeting template wiring is the remaining config step.
 - ✅ **Polish:** contact edit/delete + pause + autonomy controls; festivals **/calendar** view;
   yearly festival auto-refresh in the worker; Caddy HTTPS + basic-auth; S3 backup/restore scripts.
-  *Remaining: long-term conversation memory; template-wired WhatsApp greetings.*
+  *Remaining: template-wired WhatsApp greetings.*
+- 🚧 **Phase 5 — relationship notebook:** ✅ step 1 (manual notebook, notes in drafts);
+  ✅ step 2 (daily reminders + promise nudges on dashboard and Telegram);
+  ✅ step 3 (notes suggested from messages, kept only when you confirm);
+  ✅ step 4 tooling (pilot scoring, readiness checks, start/stop); next: run the two-week pilot.
 
 > Recommendation: run each new contact in `SUPERVISED` for a week, confirm the replies
 > sound like you, then switch to `FULL_AUTO`. Protects the relationships this is built for.

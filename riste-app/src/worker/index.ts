@@ -1,7 +1,8 @@
+import "./env";
 import { Worker } from "bullmq";
 import { connection } from "@/lib/queue";
 import type { RisteJob } from "@/lib/queue";
-import { processGreeting, processInbound } from "./processors";
+import { processExtractNotes, processGreeting, processInbound, processReminderDraft, processReminders } from "./processors";
 import { startScheduler } from "./scheduler";
 import { startEmailPoller } from "./email-poller";
 import { startFestivalRefresh } from "./festival-refresh";
@@ -16,6 +17,9 @@ const worker = new Worker<RisteJob>(
     const data = job.data;
     if (data.type === "greeting") await processGreeting(data);
     else if (data.type === "inbound") await processInbound(data);
+    else if (data.type === "reminders") await processReminders(data);
+    else if (data.type === "reminderDraft") await processReminderDraft(data);
+    else if (data.type === "extractNotes") await processExtractNotes(data);
   },
   { connection, concurrency: 5 }
 );

@@ -233,6 +233,24 @@ This is the channel most Indian relationships actually live on, so it matters. B
 - *Remaining config:* approve a greeting **template** and wire the proactive-greeting path to `sendTemplate()` (per-message cost applies); replies in the 24h window are free
 - Reminder: keep daily greetings on free SMS/email; reserve paid WhatsApp templates for festivals + closest people
 
+### Phase 5 — Relationship notebook (steps 1–3 ✅ built, pilot tooling ✅ ready)
+**Goal:** Riste remembers what each person tells you and reminds you at the right moment, so you
+show up with real attention ("How is your dad after the surgery?") instead of only sending
+generic greetings. Riste helps *you* show up. It does not pretend to be you.
+
+**Success criteria (2-week pilot, 2–3 real contacts):**
+- **Useful memory:** you keep at least 70% of the notes Riste proposes (kept ÷ proposed).
+- **Useful reminders:** at least 50% of reminders end with you acting on them (marked done or
+  turned into a message) instead of dismissing or ignoring them.
+- **Real contact:** at least 3 conversations that you start because of a reminder.
+- **Safety:** no health, grief, money or conflict note ever appears in a message that went out
+  without your approval, and no note is used in a draft before you confirm it.
+
+**Steps:** (1) ✅ manual notebook on a contact page, notes used in drafts → (2) ✅ daily reminders and promise tracking via
+dashboard + Telegram → (3) ✅ AI-proposed notes from messages, confirmed by you → (4) ✅ pilot tooling on the Metrics page → run the pilot.
+
+**Not in scope:** importing chat history, auto-sending anything based on a sensitive note, voice.
+
 ---
 
 ## 10. Deployment (Hostinger VPS + Docker + S3)

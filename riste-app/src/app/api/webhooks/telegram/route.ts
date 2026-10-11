@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sendNow } from "@/lib/deliver";
 import { answerCallback } from "@/lib/notify/telegram";
+import { actOnReminder } from "@/lib/reminders";
 
 /**
  * Telegram webhook. When you tap Approve / Reject on a notification, Telegram
@@ -29,16 +30,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const [action, messageId] = String(cb.data ?? "").split(":");
+  const [action, id, arg] = String(cb.data ?? "").split(":");
   try {
-    if (action === "approve") {
-      const result = await sendNow(messageId, undefined, { manual: true });
+    if (action === "rdone" || action === "rsnooze" || action === "rdismiss" || action === "rdraft") {
+      const verb = action === "rdone" ? "done" : action === "rsnooze" ? "snooze" : action === "rdismiss" ? "dismiss" : "draft";
+      const result = await actOnReminder(id, verb, arg ? Number(arg) : undefined);
+      await answerCallback(cb.id, result.ok ? result.message : `⚠️ ${result.error}`);
+    } else if (action === "approve") {
+      const result = await sendNow(id, undefined, { manual: true });
       await answerCallback(
         cb.id,
         result.status === "SENT" ? "✅ Sent" : `⚠️ Blocked: ${result.heldReason ?? "held"}`
       );
     } else if (action === "reject") {
-      await prisma.message.update({ where: { id: messageId }, data: { status: "REJECTED" } });
+      await prisma.message.update({ where: { id }, data: { status: "REJECTED" } });
       await answerCallback(cb.id, "🗑 Rejected");
     } else {
       await answerCallback(cb.id, "Unknown action");
