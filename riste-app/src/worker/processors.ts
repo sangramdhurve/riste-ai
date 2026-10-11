@@ -9,8 +9,9 @@ import { decideSend } from "@/lib/autonomy";
 import { loadDraftNotes } from "@/lib/notes";
 import { reminderDraftPrompt } from "@/lib/notes/reminders";
 import { runDailyReminders, toReminderNote } from "@/lib/reminders";
+import { queueNoteSuggestions, suggestNotesFromMessage } from "@/lib/notes/suggest";
 import { localDate } from "@/lib/time";
-import type { GreetingJob, InboundJob, ReminderDraftJob, RemindersJob } from "@/lib/queue";
+import type { ExtractNotesJob, GreetingJob, InboundJob, ReminderDraftJob, RemindersJob } from "@/lib/queue";
 
 function primaryChannel(contact: { channels: { type: any; value: string; isPrimary: boolean }[] }) {
   return contact.channels.find((c) => c.isPrimary) ?? contact.channels[0];
@@ -85,11 +86,14 @@ export async function processGreeting(job: GreetingJob) {
 
 /** Inbound: their reply arrived; draft + (by default) wait for your approval. */
 export async function processInbound(job: InboundJob) {
-  const s = await getSetting();
-  if (s.killSwitch) return;
-
   const incoming = await prisma.message.findUnique({ where: { id: job.messageId } });
   if (!incoming) return;
+  // Suggesting notes only reads the message and waits for the user's review, so
+  // it runs even when the kill switch or a paused contact stops the reply.
+  await queueNoteSuggestions(incoming.id, incoming.body).catch((e) => console.error("[notes] queue failed:", e));
+
+  const s = await getSetting();
+  if (s.killSwitch) return;
 
   const contact = await prisma.contact.findUnique({
     where: { id: incoming.contactId },
@@ -235,4 +239,10 @@ export async function processReminderDraft(job: ReminderDraftJob) {
     body: text,
     reason: escalate ? "held" : "awaiting_approval",
   });
+}
+
+/** Read a message and suggest notebook notes for the user to review. */
+export async function processExtractNotes(job: ExtractNotesJob) {
+  const n = await suggestNotesFromMessage(job.messageId);
+  if (n) console.log(`[notes] ${n} suggested from message ${job.messageId}`);
 }

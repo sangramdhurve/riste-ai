@@ -6,7 +6,10 @@ export const dynamic = "force-dynamic";
 
 export default async function Contacts() {
   const contacts = await prisma.contact.findMany({
-    include: { channels: true, _count: { select: { messages: true, notes: true } } },
+    include: {
+      channels: true,
+      _count: { select: { messages: true, notes: { where: { status: { in: ["ACTIVE", "DONE"] } } } } },
+    },
     orderBy: { createdAt: "desc" },
   });
 

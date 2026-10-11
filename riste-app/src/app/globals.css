@@ -189,3 +189,16 @@ a.who:hover { color: var(--accent); }
   .row { flex-wrap: wrap; }
   .row > .btns { width: 100%; }
 }
+
+/* --- suggested notes --- */
+.quote {
+  font-size: 13px; color: var(--muted); margin: 4px 0 8px; padding-left: 10px;
+  border-left: 2px solid var(--line); overflow-wrap: anywhere;
+}
+.suggest-line { display: grid; grid-template-columns: max-content 1fr 170px; gap: 8px; }
+.suggest-line:not(:has(input[type="date"])) { grid-template-columns: max-content 1fr; }
+.suggest-line select {
+  background: var(--bg); color: var(--text); border: 1px solid var(--line);
+  border-radius: 9px; padding: 9px 11px; font: inherit;
+}
+@media (max-width: 600px) { .suggest-line, .suggest-line:not(:has(input[type="date"])) { grid-template-columns: 1fr; } }

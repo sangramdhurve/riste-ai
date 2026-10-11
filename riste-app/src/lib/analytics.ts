@@ -25,7 +25,10 @@ export type EventType =
   | "reminder_done"
   | "reminder_drafted"
   | "reminder_snoozed"
-  | "reminder_dismissed";
+  | "reminder_dismissed"
+  | "notes_proposed"
+  | "note_kept"
+  | "note_dismissed";
 
 type LogInput = {
   type: EventType;

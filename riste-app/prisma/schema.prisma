@@ -107,6 +107,7 @@ model Message {
   replySentiment  String? // optional later: positive/neutral/negative classification of the reply
   createdAt       DateTime      @default(now())
   sentAt          DateTime?
+  notes           Note[] // notebook suggestions read from this message
 
   @@index([contactId, createdAt])
   @@index([status])
@@ -150,27 +151,37 @@ enum NoteKind {
 }
 
 enum NoteStatus {
+  PROPOSED // suggested by the AI from a message; unused until the user keeps it
   ACTIVE
   DONE
+  DISMISSED // a suggestion the user rejected; kept so it isn't suggested again
+}
+
+enum NoteSource {
+  MANUAL
+  AI
 }
 
 // The relationship notebook (Phase 5): what each person has told the user.
 // Non-sensitive ACTIVE notes are given to the AI as background when drafting;
 // sensitive ones (health, grief, money, conflict) are for the user only.
 model Note {
-  id           String     @id @default(cuid())
-  contact      Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  contactId    String
-  kind         NoteKind   @default(FACT)
-  text         String
-  eventDate    String? // YYYY-MM-DD in the contact's local calendar (event day / promise due date)
-  sensitive    Boolean    @default(false)
-  status       NoteStatus @default(ACTIVE)
-  doneAt       DateTime?
-  snoozedUntil String? // YYYY-MM-DD: no reminders before this day; one fires on it
-  reminders    Reminder[]
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id              String     @id @default(cuid())
+  contact         Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId       String
+  kind            NoteKind   @default(FACT)
+  text            String
+  eventDate       String? // YYYY-MM-DD in the contact's local calendar (event day / promise due date)
+  sensitive       Boolean    @default(false)
+  status          NoteStatus @default(ACTIVE)
+  doneAt          DateTime?
+  snoozedUntil    String? // YYYY-MM-DD: no reminders before this day; one fires on it
+  source          NoteSource @default(MANUAL)
+  sourceMessage   Message?   @relation(fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  sourceMessageId String? // the message an AI suggestion was read from
+  reminders       Reminder[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
   @@index([contactId, status])
 }

@@ -13,15 +13,20 @@ export type AiResult = { text: string; escalate: boolean; confidence: number };
 
 const ESCALATE_TOKEN = "__ESCALATE__";
 
-export async function generate(system: string, user: string): Promise<AiResult> {
-  const provider = process.env.AI_PROVIDER ?? "ollama";
-  let raw = "";
-  if (provider === "ollama") raw = await ollama(system, user);
-  else if (provider === "gemini") raw = await gemini(system, user);
-  else if (provider === "groq") raw = await groq(system, user);
-  else throw new Error(`Unknown AI_PROVIDER: ${provider}`);
+// json: ask the provider for a single JSON object (used for note extraction).
+export type CompleteOpts = { json?: boolean };
 
-  const text = raw.trim();
+/** Raw model output for a system + user prompt, from the configured provider. */
+export async function complete(system: string, user: string, opts: CompleteOpts = {}): Promise<string> {
+  const provider = process.env.AI_PROVIDER ?? "ollama";
+  if (provider === "ollama") return ollama(system, user, opts);
+  if (provider === "gemini") return gemini(system, user, opts);
+  if (provider === "groq") return groq(system, user, opts);
+  throw new Error(`Unknown AI_PROVIDER: ${provider}`);
+}
+
+export async function generate(system: string, user: string): Promise<AiResult> {
+  const text = (await complete(system, user)).trim();
   const escalate = text.includes(ESCALATE_TOKEN);
   // Naive confidence: short, clean, non-escalating replies score high.
   const confidence = escalate ? 0 : Math.min(1, Math.max(0.4, 1 - text.length / 600));
@@ -34,13 +39,14 @@ export function unwrapQuotes(text: string): string {
   return m && !/["“”]/.test(m[1]) ? m[1].trim() : text;
 }
 
-async function ollama(system: string, user: string): Promise<string> {
+async function ollama(system: string, user: string, opts: CompleteOpts): Promise<string> {
   const res = await fetch(`${process.env.OLLAMA_URL ?? "http://localhost:11434"}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: process.env.OLLAMA_MODEL ?? "llama3.1:8b",
       stream: false,
+      ...(opts.json ? { format: "json", options: { temperature: 0.1 } } : {}),
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
@@ -52,7 +58,7 @@ async function ollama(system: string, user: string): Promise<string> {
   return data.message?.content ?? "";
 }
 
-async function groq(system: string, user: string): Promise<string> {
+async function groq(system: string, user: string, opts: CompleteOpts): Promise<string> {
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -61,6 +67,7 @@ async function groq(system: string, user: string): Promise<string> {
     },
     body: JSON.stringify({
       model: "llama-3.1-8b-instant",
+      ...(opts.json ? { response_format: { type: "json_object" }, temperature: 0.1 } : {}),
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
@@ -72,7 +79,7 @@ async function groq(system: string, user: string): Promise<string> {
   return data.choices?.[0]?.message?.content ?? "";
 }
 
-async function gemini(system: string, user: string): Promise<string> {
+async function gemini(system: string, user: string, opts: CompleteOpts): Promise<string> {
   const key = process.env.GEMINI_API_KEY;
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
@@ -82,6 +89,7 @@ async function gemini(system: string, user: string): Promise<string> {
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },
         contents: [{ role: "user", parts: [{ text: user }] }],
+        ...(opts.json ? { generationConfig: { responseMimeType: "application/json", temperature: 0.1 } } : {}),
       }),
     }
   );

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import MessageActions from "./_components/MessageActions";
 import ReminderActions from "./_components/ReminderActions";
+import ProposedNote from "./_components/ProposedNote";
 import { localDate } from "@/lib/time";
 import { relativeDay } from "@/lib/notes/select";
 
@@ -40,6 +41,13 @@ export default async function Home() {
     orderBy: { createdAt: "desc" },
   });
 
+  const suggestions = await prisma.note.findMany({
+    where: { status: "PROPOSED" },
+    include: { contact: true, sourceMessage: { select: { direction: true, body: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+  });
+
   return (
     <>
       {reminders.length > 0 && (
@@ -63,6 +71,30 @@ export default async function Home() {
               </div>
             );
           })}
+        </>
+      )}
+
+      {suggestions.length > 0 && (
+        <>
+          <h2>📝 Notes to review ({suggestions.length})</h2>
+          <p className="meta" style={{ marginTop: -4, marginBottom: 12 }}>
+            Picked out of recent messages. Nothing here is used until you keep it.
+          </p>
+          {suggestions.map((n) => (
+            <ProposedNote
+              key={n.id}
+              today={localDate(n.contact.timezone)}
+              contact={{ id: n.contactId, name: n.contact.name, relationship: n.contact.relationship }}
+              note={{
+                id: n.id,
+                kind: n.kind,
+                text: n.text,
+                eventDate: n.eventDate,
+                sensitive: n.sensitive,
+                source: n.sourceMessage,
+              }}
+            />
+          ))}
         </>
       )}
 

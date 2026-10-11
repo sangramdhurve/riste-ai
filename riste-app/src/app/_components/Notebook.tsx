@@ -192,13 +192,13 @@ export default function Notebook({
             className="btn b-no"
             disabled={busy}
             onClick={() => {
-              if (!confirm(`Delete all ${notes.length} notes about ${contactName}? This can't be undone.`)) return;
+              if (!confirm(`Forget everything noted about ${contactName}, including suggestions? This can't be undone.`)) return;
               run(() => send(`/api/contacts/${contactId}/notes`, "DELETE"));
             }}
           >
             Forget everything about {contactName}
           </button>
-          <div className="hint">Deletes every note. Messages and settings stay as they are.</div>
+          <div className="hint">Deletes every note and suggestion. Messages and settings stay as they are.</div>
         </div>
       )}
     </>

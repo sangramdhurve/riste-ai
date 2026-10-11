@@ -4,7 +4,8 @@ import { looksSensitive } from "./sensitive";
 
 export const MAX_NOTE_LENGTH = 500;
 const KINDS: NoteKind[] = ["FACT", "EVENT", "PROMISE"];
-const STATUSES: NoteStatus[] = ["ACTIVE", "DONE"];
+// PROPOSED is only ever set by the suggestion job, never through the API.
+const STATUSES: NoteStatus[] = ["ACTIVE", "DONE", "DISMISSED"];
 
 export type NoteFields = {
   kind?: NoteKind;

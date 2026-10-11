@@ -149,6 +149,20 @@ drafts always need your approval, whatever the contact's autonomy; not offered f
 **Snooze** (tomorrow / next week; the note stays quiet until then and reminds once on that day),
 **Dismiss**. API: `POST /api/reminders/<id> {action: "done"|"draft"|"snooze"|"dismiss", days?: 1|7}`.
 
+### Suggested notes (step 3)
+Riste reads conversations and **suggests** notes; nothing is used until you keep it.
+- **Their messages:** after the reply draft is under way, a lower-priority job (15 s later, behind
+  other work) reads each incoming message and suggests up to 3 facts or events about them.
+- **What you send:** every message sent in your name (including approved AI drafts) is read for
+  promises you made ("I'll send you the book this weekend" → Promise, due Saturday).
+- Suggestions appear under **Notes to review** on the home page and **Suggested from messages** on
+  the contact's page, with the message they came from. **Keep** (edit kind/text/date/private first
+  if needed) or **Not useful**. Dismissed suggestions are remembered and not suggested again.
+- Safety: incoming messages are treated as data; they can never create a promise; suggestions with
+  links or long numbers are dropped; messages that try to instruct the AI ("ignore previous
+  instructions…") are skipped; short messages ("ok 👍") are skipped; money/health/grief/conflict
+  suggestions are private. The model gets a two-week calendar so "next Monday" resolves correctly.
+
 ## SMS setup (android-sms-gateway)
 1. Install the app from https://github.com/capcom6/android-sms-gateway on your phone; enable
    **Local server**, set a username/password.
@@ -202,7 +216,7 @@ your approval.
   *Remaining: template-wired WhatsApp greetings.*
 - 🚧 **Phase 5 — relationship notebook:** ✅ step 1 (manual notebook, notes in drafts);
   ✅ step 2 (daily reminders + promise nudges on dashboard and Telegram);
-  next: AI-suggested notes you confirm, then the pilot.
+  ✅ step 3 (notes suggested from messages, kept only when you confirm); next: the pilot.
 
 > Recommendation: run each new contact in `SUPERVISED` for a week, confirm the replies
 > sound like you, then switch to `FULL_AUTO`. Protects the relationships this is built for.

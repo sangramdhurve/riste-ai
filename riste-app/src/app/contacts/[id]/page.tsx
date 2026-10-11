@@ -3,18 +3,24 @@ import { prisma } from "@/lib/db";
 import { localDate } from "@/lib/time";
 import { selectDraftNotes } from "@/lib/notes/select";
 import Notebook from "../../_components/Notebook";
+import ProposedNote from "../../_components/ProposedNote";
 
 export const dynamic = "force-dynamic";
 
 export default async function ContactPage({ params }: { params: { id: string } }) {
   const contact = await prisma.contact.findUnique({
     where: { id: params.id },
-    include: { channels: true, notes: { orderBy: { createdAt: "desc" } } },
+    include: {
+      channels: true,
+      notes: { orderBy: { createdAt: "desc" }, include: { sourceMessage: { select: { direction: true, body: true } } } },
+    },
   });
   if (!contact) notFound();
 
   const today = localDate(contact.timezone);
   const usable = selectDraftNotes(contact.notes, today);
+  const kept = contact.notes.filter((n) => n.status === "ACTIVE" || n.status === "DONE");
+  const proposed = contact.notes.filter((n) => n.status === "PROPOSED");
   const usableCount = usable.about.length + usable.promises.length;
 
   return (
@@ -29,6 +35,29 @@ export default async function ContactPage({ params }: { params: { id: string } }
         {contact.channels.map((ch) => `${ch.type.toLowerCase()}: ${ch.value}`).join(" · ")}
       </div>
 
+      {proposed.length > 0 && (
+        <>
+          <h2>📝 Suggested from messages ({proposed.length})</h2>
+          <p className="meta" style={{ marginTop: -4, marginBottom: 12 }}>
+            Riste picked these out of your conversation. They aren't used anywhere until you keep them.
+          </p>
+          {proposed.map((n) => (
+            <ProposedNote
+              key={n.id}
+              today={today}
+              note={{
+                id: n.id,
+                kind: n.kind,
+                text: n.text,
+                eventDate: n.eventDate,
+                sensitive: n.sensitive,
+                source: n.sourceMessage,
+              }}
+            />
+          ))}
+        </>
+      )}
+
       <h2>📓 Notebook</h2>
       <p className="meta" style={{ marginTop: -4, marginBottom: 12 }}>
         {usableCount > 0
@@ -40,13 +69,13 @@ export default async function ContactPage({ params }: { params: { id: string } }
         contactId={contact.id}
         contactName={contact.name}
         today={today}
-        notes={contact.notes.map((n) => ({
+        notes={kept.map((n) => ({
           id: n.id,
           kind: n.kind,
           text: n.text,
           eventDate: n.eventDate,
           sensitive: n.sensitive,
-          status: n.status,
+          status: n.status as "ACTIVE" | "DONE",
           snoozedUntil: n.snoozedUntil,
         }))}
       />

@@ -24,7 +24,8 @@ export async function POST(req: Request, { params }: Params) {
   const contact = await prisma.contact.findUnique({ where: { id: params.id }, select: { id: true } });
   if (!contact) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const { status, ...fields } = parsed.data;
+  // Notes added by hand are always active; status changes go through PATCH.
+  const { status: _ignored, ...fields } = parsed.data;
   const note = await prisma.note.create({
     data: { ...fields, text: fields.text!, contactId: contact.id },
   });

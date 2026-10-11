@@ -20,6 +20,8 @@ const LATIN = new RegExp(
       // money
       "money", "loan\\w*", "debt\\w*", "borrow\\w*", "lent", "owe\\w*", "salary", "rent",
       "fired", "laid off", "layoff\\w*", "jobless", "paisa", "paise", "karz\\w*", "udhaar",
+      "rupee\\w*", "rs\\.?\\s?\\d+", "inr", "dollars?", "pay", "payment\\w*", "transfer\\w*", "upi",
+      "bank account", "account number",
       // conflict
       "divorce\\w*", "breakup", "broke up", "separated", "fight\\w*", "fought", "argument\\w*",
       "conflict", "angry", "upset", "talaq", "jhag(?:da|ra)\\w*",
@@ -28,13 +30,13 @@ const LATIN = new RegExp(
   "i"
 );
 
-// Devanagari has no ASCII word boundaries, so match these as plain substrings.
-const DEVANAGARI = [
-  "बीमार", "अस्पताल", "ऑपरेशन", "मौत", "मृत्यु", "गुज़र गए", "गुजर गए", "निधन", "अंतिम संस्कार",
+// Devanagari and "₹" have no ASCII word boundaries, so match these as plain substrings.
+const SUBSTRINGS = [
+  "₹", "बीमार", "अस्पताल", "ऑपरेशन", "मौत", "मृत्यु", "गुज़र गए", "गुजर गए", "निधन", "अंतिम संस्कार",
   "तलाक", "झगड़ा", "पैसे", "पैसा", "कर्ज़", "कर्ज", "उधार", "नौकरी छूट",
 ];
 
 export function looksSensitive(text: string | null | undefined): boolean {
   if (!text) return false;
-  return LATIN.test(text) || DEVANAGARI.some((w) => text.includes(w));
+  return LATIN.test(text) || SUBSTRINGS.some((w) => text.includes(w));
 }
