@@ -23,6 +23,8 @@ export type GreetingJob = {
   festival?: string;
 };
 export type InboundJob = { type: "inbound"; messageId: string };
-export type RisteJob = GreetingJob | InboundJob;
+export type RemindersJob = { type: "reminders"; contactId: string };
+export type ReminderDraftJob = { type: "reminderDraft"; reminderId: string };
+export type RisteJob = GreetingJob | InboundJob | RemindersJob | ReminderDraftJob;
 
 export const risteQueue = new Queue<RisteJob>("riste", { connection });

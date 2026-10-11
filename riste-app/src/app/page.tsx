@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/db";
 import MessageActions from "./_components/MessageActions";
+import ReminderActions from "./_components/ReminderActions";
+import { localDate } from "@/lib/time";
+import { relativeDay } from "@/lib/notes/select";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +32,40 @@ export default async function Home() {
     take: 50,
   });
   const attention = recent.filter((m) => m.status === "HELD" || m.status === "AWAITING_APPROVAL");
+  // Open reminders from the last week whose note is still active (finishing or
+  // deleting the note in the notebook makes its reminders moot).
+  const reminders = await prisma.reminder.findMany({
+    where: { status: "OPEN", createdAt: { gte: new Date(Date.now() - 7 * 86_400_000) }, note: { status: "ACTIVE" } },
+    include: { contact: true, note: true },
+    orderBy: { createdAt: "desc" },
+  });
 
   return (
     <>
+      {reminders.length > 0 && (
+        <>
+          <h2>📓 Reminders ({reminders.length})</h2>
+          {reminders.map((r) => {
+            const when = relativeDay(r.dueDate, localDate(r.contact.timezone));
+            return (
+              <div className="row" key={r.id}>
+                <div className="time">{when}</div>
+                <div style={{ flex: 1 }}>
+                  <div>
+                    <a className="who" href={`/contacts/${r.contactId}`}>
+                      {r.contact.name}
+                    </a>{" "}
+                    <span className="rel">· {r.contact.relationship}</span>
+                  </div>
+                  <div className="body">{r.text}</div>
+                  <ReminderActions id={r.id} canDraft={!r.note.sensitive} />
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+
       <h2>Needs your attention ({attention.length})</h2>
       {attention.length === 0 && <div className="empty">Nothing waiting. 🎉</div>}
       {attention.map((m) => (

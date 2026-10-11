@@ -13,6 +13,7 @@ export type NoteView = {
   eventDate: string | null;
   sensitive: boolean;
   status: "ACTIVE" | "DONE";
+  snoozedUntil: string | null;
 };
 
 const KIND_LABEL: Record<Kind, string> = { FACT: "Remember", EVENT: "Event", PROMISE: "Promise" };
@@ -223,6 +224,7 @@ function NoteRow({
 
   const days = note.eventDate ? daysBetween(today, note.eventDate) : null;
   const soon = days !== null && days >= 0 && days <= 1;
+  const snoozeDays = note.snoozedUntil ? daysBetween(today, note.snoozedUntil) : 0;
 
   function save() {
     if (!text.trim()) return;
@@ -283,6 +285,11 @@ function NoteRow({
                 </span>
               )}
               {note.sensitive && <span className="badge b-private">🔒 private</span>}
+              {snoozeDays > 0 && !isDone && (
+                <span className="badge b-private" title={`Reminders paused until ${note.snoozedUntil}`}>
+                  💤 {snoozeDays === 1 ? "snoozed until tomorrow" : `snoozed for ${snoozeDays} days`}
+                </span>
+              )}
             </div>
           </>
         )}

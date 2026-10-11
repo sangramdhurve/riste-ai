@@ -113,7 +113,7 @@ docker compose up -d --build
 - **No dashboard auth** — single-operator; run behind your VPS auth (e.g. Caddy basic-auth).
 - SMS, festival engine, and WhatsApp need external accounts/devices — see roadmap.
 
-## Relationship notebook (Phase 5, step 1)
+## Relationship notebook (Phase 5)
 Each contact has a notebook at **Contacts → 📓** (`/contacts/<id>`). Three kinds of note:
 **Remember** (facts: kids' names, likes, job), **Event** (with a date: exam, trip, surgery) and
 **Promise** (what you said you'd do, optional due date). Mark notes done, edit, delete, or
@@ -129,6 +129,25 @@ How drafts use them:
 
 API: `GET|POST|DELETE /api/contacts/<id>/notes` (list / add `{kind, text, eventDate?, sensitive?}` /
 forget all), `PATCH|DELETE /api/notes/<noteId>` (edit any field or `{status: "DONE"|"ACTIVE"}`).
+
+### Reminders (step 2)
+Every day at **09:30 in each contact's timezone** (`Setting.reminderTime`), the worker checks the
+notebook and creates reminders. They appear at the top of the dashboard and, if Telegram is set up,
+as a Telegram message with buttons. If the worker starts late it catches up the same day; each
+note reminds at most once a day.
+
+| Note | Reminds you |
+|---|---|
+| Event | on the day ("Today: exam. Send a quick message?") and the day after ("ask how it went") |
+| Private event (health, grief…) | also one week later ("check in on them") |
+| Promise with a due date | on the due date, 3 days late, then weekly until done |
+| Promise without a date | 3 days after you noted it, then weekly until done |
+
+Actions (dashboard or Telegram): **Done** (on a promise this also marks the promise kept),
+**Draft a message** (an AI draft in your voice that waits in *Needs your attention*; reminder
+drafts always need your approval, whatever the contact's autonomy; not offered for private notes),
+**Snooze** (tomorrow / next week; the note stays quiet until then and reminds once on that day),
+**Dismiss**. API: `POST /api/reminders/<id> {action: "done"|"draft"|"snooze"|"dismiss", days?: 1|7}`.
 
 ## SMS setup (android-sms-gateway)
 1. Install the app from https://github.com/capcom6/android-sms-gateway on your phone; enable
@@ -182,7 +201,8 @@ your approval.
   yearly festival auto-refresh in the worker; Caddy HTTPS + basic-auth; S3 backup/restore scripts.
   *Remaining: template-wired WhatsApp greetings.*
 - 🚧 **Phase 5 — relationship notebook:** ✅ step 1 (manual notebook, notes in drafts);
-  next: daily reminders + promise tracking, then AI-suggested notes you confirm, then the pilot.
+  ✅ step 2 (daily reminders + promise nudges on dashboard and Telegram);
+  next: AI-suggested notes you confirm, then the pilot.
 
 > Recommendation: run each new contact in `SUPERVISED` for a week, confirm the replies
 > sound like you, then switch to `FULL_AUTO`. Protects the relationships this is built for.

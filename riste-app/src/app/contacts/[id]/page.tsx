@@ -47,6 +47,7 @@ export default async function ContactPage({ params }: { params: { id: string } }
           eventDate: n.eventDate,
           sensitive: n.sensitive,
           status: n.status,
+          snoozedUntil: n.snoozedUntil,
         }))}
       />
     </>

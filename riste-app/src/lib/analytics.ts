@@ -20,7 +20,12 @@ export type EventType =
   | "auto_sent"
   | "failed"
   | "held"
-  | "reply_received";
+  | "reply_received"
+  | "reminder_created"
+  | "reminder_done"
+  | "reminder_drafted"
+  | "reminder_snoozed"
+  | "reminder_dismissed";
 
 type LogInput = {
   type: EventType;
