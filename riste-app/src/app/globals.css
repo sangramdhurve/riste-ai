@@ -202,3 +202,16 @@ a.who:hover { color: var(--accent); }
   border-radius: 9px; padding: 9px 11px; font: inherit;
 }
 @media (max-width: 600px) { .suggest-line, .suggest-line:not(:has(input[type="date"])) { grid-template-columns: 1fr; } }
+
+/* --- settings --- */
+.form.settings h3 { font-size: 14px; margin: 22px 0 8px; color: var(--text); }
+.form.settings h3:first-child { margin-top: 0; }
+.form.settings label:not(.check) { max-width: 420px; }
+.form.settings .grid2 { max-width: 420px; }
+.hint.warn, .meta.warn { color: var(--amber); }
+.pause-banner {
+  display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  margin: -12px 0 20px; padding: 10px 14px; border-radius: var(--radius);
+  background: var(--red-soft); color: var(--red); font-size: 14px; font-weight: 500;
+}
+.pause-banner a { color: var(--red); text-decoration: underline; }

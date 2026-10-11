@@ -17,10 +17,11 @@ const empty = {
   sampleMessages: "",
 };
 
-export default function AddContactForm() {
+export default function AddContactForm({ defaultAutonomy = "SUPERVISED" }: { defaultAutonomy?: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ ...empty });
+  const start = { ...empty, autonomy: defaultAutonomy };
+  const [f, setF] = useState(start);
   const [busy, setBusy] = useState(false);
 
   const set = (k: keyof typeof empty) => (e: { target: { value: string } }) =>
@@ -53,7 +54,7 @@ export default function AddContactForm() {
         alert("Could not add contact.");
         return;
       }
-      setF({ ...empty });
+      setF(start);
       setOpen(false);
       router.refresh();
     } finally {

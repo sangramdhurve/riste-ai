@@ -3,6 +3,23 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+// Why a send was blocked, in plain words (the reasons come from the send guardrails).
+const BLOCKED: Record<string, string> = {
+  kill_switch: "Sending is paused. Resume it in Settings first.",
+  opted_out: "They've opted out of messages on this channel, so it wasn't sent.",
+  no_consent: "They haven't agreed to messages on this channel yet, so it wasn't sent.",
+};
+
+function failureText(path: string, data: { error?: string; reason?: string }): string {
+  if (path.endsWith("approve")) {
+    if (data.error === "blocked") return BLOCKED[data.reason ?? ""] ?? "This message was held back and not sent.";
+    if (data.error === "rejected") return "This draft was already rejected.";
+    return "Couldn't send it. It's marked as failed under Activity.";
+  }
+  if (path.endsWith("regenerate")) return "Couldn't write a new draft right now. Please try again.";
+  return "Couldn't do that. Please try again.";
+}
+
 export default function MessageActions({ id, initialBody }: { id: string; initialBody: string }) {
   const router = useRouter();
   const [body, setBody] = useState(initialBody);
@@ -17,7 +34,9 @@ export default function MessageActions({ id, initialBody }: { id: string; initia
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        alert("Action failed — check the worker/logs.");
+        const data = await res.json().catch(() => ({}));
+        alert(failureText(path, data));
+        router.refresh();
         return;
       }
       if (path.endsWith("regenerate")) {
