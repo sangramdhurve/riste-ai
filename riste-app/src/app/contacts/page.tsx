@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getSetting } from "@/lib/settings";
 import AddContactForm from "../_components/AddContactForm";
 import ContactControls from "../_components/ContactControls";
 
@@ -13,23 +14,14 @@ export default async function Contacts() {
     orderBy: { createdAt: "desc" },
   });
 
+  const { defaultAutonomy } = await getSetting();
+
   return (
     <>
       <h2>Contacts ({contacts.length})</h2>
-      <AddContactForm />
+      <AddContactForm defaultAutonomy={defaultAutonomy} />
       {contacts.length === 0 && (
-        <div className="empty">
-          No contacts yet. Add one with:
-          <pre style={{ marginTop: 8 }}>
-{`curl -X POST $APP_URL/api/contacts -H "Content-Type: application/json" -d '{
-  "name": "Aai", "relationship": "mother",
-  "morningTime": "08:00", "eveningTime": "21:00", "autonomy": "SUPERVISED",
-  "channels": [{ "type": "EMAIL", "value": "aai@example.com", "isPrimary": true }],
-  "styleNotes": "warm, short, calls her Aai", "languageMix": "Hindi-English",
-  "sampleMessages": ["Good morning Aai 🌸", "Khana kha liya?"]
-}'`}
-          </pre>
-        </div>
+        <div className="empty">No contacts yet. Use “Add contact” above to add the first person you want to stay in touch with.</div>
       )}
       {contacts.map((c) => (
         <div className="row" key={c.id}>

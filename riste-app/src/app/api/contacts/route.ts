@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { getSetting } from "@/lib/settings";
 
 export async function GET() {
   const contacts = await prisma.contact.findMany({
@@ -11,13 +12,14 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const b = await req.json();
+  const { defaultAutonomy } = await getSetting();
   const contact = await prisma.contact.create({
     data: {
       name: b.name,
       relationship: b.relationship,
       timezone: b.timezone ?? "Asia/Kolkata",
       language: b.language ?? "en",
-      autonomy: b.autonomy ?? "SUPERVISED",
+      autonomy: b.autonomy ?? defaultAutonomy,
       morningTime: b.morningTime ?? null,
       eveningTime: b.eveningTime ?? null,
       festivals: b.festivals ?? [],

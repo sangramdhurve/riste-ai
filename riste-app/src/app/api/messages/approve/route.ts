@@ -41,6 +41,12 @@ export async function POST(req: Request) {
     }
     return NextResponse.json(updated);
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 502 });
+    // Provider errors can name the mail/SMS service or echo credentials; keep
+    // them in the server log and give the dashboard a plain answer.
+    console.error("[approve] send failed:", err);
+    const msg = String(err);
+    if (msg.includes("message not found")) return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (msg.includes("message was rejected")) return NextResponse.json({ error: "rejected" }, { status: 409 });
+    return NextResponse.json({ error: "send_failed" }, { status: 502 });
   }
 }

@@ -1,8 +1,9 @@
-# Riste AI — Phase 1 (Next.js)
+# Riste AI
 
-An AI relationship manager that keeps your important people warm, automatically.
-Phase 1 = **email channel**, contacts, tone profiles, scheduler, auto-reply with a
-human-in-the-loop safety net, and the operator dashboard.
+An AI relationship manager that keeps your important people warm, in your own voice, with
+you approving what goes out. Email, SMS and WhatsApp channels; per-person tone profiles;
+greetings and festival wishes; a relationship notebook with reminders; and the operator
+dashboard. See the roadmap at the end for what each phase added.
 
 ## Stack
 - **Next.js (TypeScript)** — dashboard + API routes + inbound webhooks
@@ -23,7 +24,8 @@ riste-app/
     ├── app/                # Next.js dashboard + API
     │   ├── page.tsx        # Activity feed + "Needs your attention"
     │   ├── contacts/       # Contacts view; contacts/[id] = per-person notebook
-    │   └── api/            # contacts, webhooks/inbound, messages/approve, settings/killswitch
+    │   ├── settings/       # global settings page (pause sending, quiet hours, limits, consent…)
+    │   └── api/            # contacts, notes, reminders, messages, settings, pilot, webhooks
     ├── lib/
     │   ├── db.ts           # Prisma client
     │   ├── queue.ts        # BullMQ queue + Redis
@@ -71,6 +73,11 @@ docker compose up -d --build
   Restore with `scripts/restore.sh riste-YYYYMMDD-HHMMSS.sql.gz`.
   (Needs `postgresql-client` + `awscli` on the host.)
 
+- **Nothing about the stack is exposed:** errors shown on the dashboard or returned by the API
+  are plain-language; the underlying error goes to the server log only. The proxy strips its
+  own `Server`/`Via` headers, and the app sends no `X-Powered-By`. Pages behind the login still
+  carry the framework's `Vary` header; the open webhook replies don't.
+
 ## How it works — human is in control by default
 - **Default = approve everything.** New contacts are `SUPERVISED`: every message (greeting
   *and* reply) is drafted and **waits for your tap** — nothing sends on its own.
@@ -83,9 +90,14 @@ docker compose up -d --build
   replies still approved) or `FULL_AUTO` (replies auto-send only when confident & not flagged).
 - **Guardrail:** the AI emits `__ESCALATE__` for anything emotional, money-related, conflict,
   or "let's meet / call me" — those become `HELD` and always come back to you.
-- **Kill switch:** `POST /api/settings/killswitch {"on": true}` stops all sending instantly.
+- **Kill switch:** **Settings → Pause all sending** stops all drafting and sending instantly (a red
+  banner shows on every page while paused). API: `PATCH /api/settings {"killSwitch": true}`.
 
 ## Your controls
+- **Settings page** (`/settings`): pause all sending; quiet hours and the daily per-person limit
+  for automatic sends; the consent requirement (turning it off asks you to confirm); the autonomy
+  new contacts start with; the notebook reminder time; and an optional line appended to greetings
+  saying you had help writing them. API: `PATCH /api/settings` with any of those fields.
 - **Notifications:** when a draft is ready you get a **Telegram** message with **Approve /
   Reject** buttons (act without opening the dashboard). The dashboard's "Needs your attention"
   queue always shows them too. (WhatsApp-to-self is a planned Phase 4 notifier.)

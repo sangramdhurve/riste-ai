@@ -9,5 +9,13 @@
 		{$BASICAUTH_USER} {$BASICAUTH_HASH}
 	}
 
+	# Don't advertise the stack. The proxy names itself in `Server` and `Via`; the app's
+	# `Vary` lists framework-specific headers and is meaningless on the JSON
+	# webhook replies, which are the only responses reachable without a login.
+	header -Server
+	header -Via
+	@webhooks path /api/webhooks/*
+	header @webhooks -Vary
+
 	reverse_proxy riste-web:3000
 }

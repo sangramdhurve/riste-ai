@@ -1,12 +1,14 @@
 import "./globals.css";
 import type { ReactNode } from "react";
+import { getSetting } from "@/lib/settings";
 
 export const metadata = {
   title: "Riste AI",
   description: "Keep your important people warm — automatically.",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const { killSwitch } = await getSetting();
   return (
     <html lang="en">
       <body>
@@ -18,7 +20,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <a href="/contacts">Contacts</a>
             <a href="/calendar">Calendar</a>
             <a href="/metrics">Metrics</a>
+            <a href="/settings">Settings</a>
           </nav>
+          {killSwitch && (
+            <div className="pause-banner" role="status">
+              <span>⏸ Sending is paused. Nothing is drafted or sent.</span>
+              <a href="/settings">Resume in Settings</a>
+            </div>
+          )}
           {children}
         </div>
       </body>

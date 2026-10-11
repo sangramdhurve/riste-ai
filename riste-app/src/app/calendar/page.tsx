@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import FestivalLoader from "../_components/FestivalLoader";
 
 export const dynamic = "force-dynamic";
 
@@ -26,12 +27,7 @@ export default async function Calendar() {
   return (
     <>
       <h2>Upcoming festivals ({festivals.length})</h2>
-      {festivals.length === 0 && (
-        <div className="empty">
-          No festivals loaded. Set CALENDARIFIC_API_KEY and call{" "}
-          <code>POST /api/festivals/refresh</code>.
-        </div>
-      )}
+      {festivals.length === 0 && <FestivalLoader connected={!!process.env.CALENDARIFIC_API_KEY} />}
       {festivals.map((f) => {
         const who = recipientsFor(f.tags);
         return (
