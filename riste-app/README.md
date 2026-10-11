@@ -16,19 +16,21 @@ human-in-the-loop safety net, and the operator dashboard.
 riste-app/
 ├── docker-compose.yml      # postgres, redis, web, worker, (ollama)
 ├── Dockerfile
-├── prisma/schema.prisma    # Contact, ContactChannel, ToneProfile, Message, Setting
+├── prisma/schema.prisma    # Contact, ContactChannel, ToneProfile, Note, Message, Setting
+├── prisma/migrations/      # committed migrations (applied on worker start in Docker)
 ├── prisma/seed.ts
 └── src/
     ├── app/                # Next.js dashboard + API
     │   ├── page.tsx        # Activity feed + "Needs your attention"
-    │   ├── contacts/       # Contacts view
+    │   ├── contacts/       # Contacts view; contacts/[id] = per-person notebook
     │   └── api/            # contacts, webhooks/inbound, messages/approve, settings/killswitch
     ├── lib/
     │   ├── db.ts           # Prisma client
     │   ├── queue.ts        # BullMQ queue + Redis
-    │   ├── ai/             # engine.ts (providers) + prompt.ts (your voice)
+    │   ├── ai/             # engine.ts (providers) + prompt.ts (your voice + notebook notes)
+    │   ├── notes/          # notebook: which notes drafts may use, private-topic check, validation
     │   └── channels/       # types.ts (interface) + email.ts + index.ts (registry)
-    └── worker/             # index.ts, scheduler.ts, processors.ts
+    └── worker/             # env.ts (loads .env first), index.ts, scheduler.ts, processors.ts
 ```
 
 ## Run locally
@@ -43,7 +45,11 @@ npm run db:seed               # optional: demo contact + settings
 # two processes:
 npm run dev                   # dashboard at http://localhost:3000
 npm run worker:dev            # scheduler + job processor
+npm test                      # unit tests
 ```
+
+If ports 5432/6379 are already taken by another project, set `RISTE_DB_PORT` / `RISTE_REDIS_PORT`
+in `.env` (e.g. 5433 / 6380) and point `DATABASE_URL` / `REDIS_URL` at the same ports.
 
 To use local AI: `docker compose up -d ollama && docker exec -it <ollama> ollama pull llama3.1:8b`,
 or set `AI_PROVIDER=groq` / `gemini` with the matching API key in `.env`.
@@ -51,10 +57,8 @@ or set `AI_PROVIDER=groq` / `gemini` with the matching API key in `.env`.
 ## Run everything in Docker (VPS)
 ```bash
 docker compose up -d --build
-# First stand-up (no committed migrations yet): create the tables directly.
-docker compose exec riste-web npx prisma db push
-# Once you've committed migrations (prisma migrate dev locally), use instead:
-# docker compose exec riste-web npx prisma migrate deploy
+# The worker runs `prisma migrate deploy` before it starts, so the schema is created/updated
+# automatically from the committed migrations in prisma/migrations.
 ```
 
 ## Production: HTTPS, auth, backups
@@ -106,8 +110,25 @@ docker compose exec riste-web npx prisma db push
 
 ### Still open (deliberate, later phases or need external setup)
 - **Tone seeding is manual** (paste past messages via the contacts API / seed) — no import UI yet.
-- **No dashboard auth / tests** — single-operator; run behind your VPS auth (e.g. Caddy basic-auth).
+- **No dashboard auth** — single-operator; run behind your VPS auth (e.g. Caddy basic-auth).
 - SMS, festival engine, and WhatsApp need external accounts/devices — see roadmap.
+
+## Relationship notebook (Phase 5, step 1)
+Each contact has a notebook at **Contacts → 📓** (`/contacts/<id>`). Three kinds of note:
+**Remember** (facts: kids' names, likes, job), **Event** (with a date: exam, trip, surgery) and
+**Promise** (what you said you'd do, optional due date). Mark notes done, edit, delete, or
+**Forget everything about <name>** to wipe all their notes (messages and settings stay).
+
+How drafts use them:
+- Only **active, non-private** notes reach the AI, quoted as background facts (never instructions).
+  Dated events are included from 7 days before to 14 days after; facts and promises are capped.
+- An event **today or tomorrow** is worked into that day's greeting ("good luck with the exam").
+- **Private notes** (health, grief, money, conflict) are never used in any message. Notes that look
+  personal are made private automatically (English + Hindi keyword check); untick if it's fine.
+- Notes are kept when someone replies STOP; they're your memory, not a way to message them.
+
+API: `GET|POST|DELETE /api/contacts/<id>/notes` (list / add `{kind, text, eventDate?, sensitive?}` /
+forget all), `PATCH|DELETE /api/notes/<noteId>` (edit any field or `{status: "DONE"|"ACTIVE"}`).
 
 ## SMS setup (android-sms-gateway)
 1. Install the app from https://github.com/capcom6/android-sms-gateway on your phone; enable
@@ -159,7 +180,9 @@ your approval.
   proactive-greeting template wiring is the remaining config step.
 - ✅ **Polish:** contact edit/delete + pause + autonomy controls; festivals **/calendar** view;
   yearly festival auto-refresh in the worker; Caddy HTTPS + basic-auth; S3 backup/restore scripts.
-  *Remaining: long-term conversation memory; template-wired WhatsApp greetings.*
+  *Remaining: template-wired WhatsApp greetings.*
+- 🚧 **Phase 5 — relationship notebook:** ✅ step 1 (manual notebook, notes in drafts);
+  next: daily reminders + promise tracking, then AI-suggested notes you confirm, then the pilot.
 
 > Recommendation: run each new contact in `SUPERVISED` for a week, confirm the replies
 > sound like you, then switch to `FULL_AUTO`. Protects the relationships this is built for.

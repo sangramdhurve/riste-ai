@@ -25,7 +25,13 @@ export async function generate(system: string, user: string): Promise<AiResult> 
   const escalate = text.includes(ESCALATE_TOKEN);
   // Naive confidence: short, clean, non-escalating replies score high.
   const confidence = escalate ? 0 : Math.min(1, Math.max(0.4, 1 - text.length / 600));
-  return { text: text.replace(ESCALATE_TOKEN, "").trim(), escalate, confidence };
+  return { text: unwrapQuotes(text.replace(ESCALATE_TOKEN, "").trim()), escalate, confidence };
+}
+
+// Small models sometimes wrap the whole message in quotes; those would be sent verbatim.
+export function unwrapQuotes(text: string): string {
+  const m = text.match(/^["“]([\s\S]*)["”]$/);
+  return m && !/["“”]/.test(m[1]) ? m[1].trim() : text;
 }
 
 async function ollama(system: string, user: string): Promise<string> {

@@ -1,3 +1,4 @@
+import "./env";
 import { Worker } from "bullmq";
 import { connection } from "@/lib/queue";
 import type { RisteJob } from "@/lib/queue";

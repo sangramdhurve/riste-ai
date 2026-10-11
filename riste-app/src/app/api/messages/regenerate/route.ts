@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { generate } from "@/lib/ai/engine";
 import { buildVoiceSystemPrompt, replyUserPrompt } from "@/lib/ai/prompt";
 import { logEvent } from "@/lib/analytics";
+import { loadDraftNotes } from "@/lib/notes";
 
 /**
  * Ask the AI for a fresh draft of a pending message (keeps it awaiting approval).
@@ -36,7 +37,8 @@ export async function POST(req: Request) {
     ? replyUserPrompt(history)
     : `Rewrite this message with fresh wording — same intent, same warmth, similar length:\n"${msg.body}"`;
 
-  const { text, escalate, confidence } = await generate(buildVoiceSystemPrompt(contact), userPrompt);
+  const notes = await loadDraftNotes(contact.id, contact.timezone);
+  const { text, escalate, confidence } = await generate(buildVoiceSystemPrompt(contact, notes), userPrompt);
   // The fresh draft becomes the new baseline, so a later edit-distance measures
   // against the AI's most recent attempt, not a discarded earlier one.
   // If the new draft escalates, hold it for a human instead of quietly queueing it.

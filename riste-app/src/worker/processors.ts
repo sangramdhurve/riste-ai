@@ -6,6 +6,7 @@ import { notifyOperator } from "@/lib/notify";
 import { logEvent } from "@/lib/analytics";
 import { getSetting } from "@/lib/settings";
 import { decideSend } from "@/lib/autonomy";
+import { loadDraftNotes } from "@/lib/notes";
 import type { GreetingJob, InboundJob } from "@/lib/queue";
 
 function primaryChannel(contact: { channels: { type: any; value: string; isPrimary: boolean }[] }) {
@@ -26,9 +27,10 @@ export async function processGreeting(job: GreetingJob) {
   if (!ch) return;
 
   const t0 = Date.now();
+  const notes = await loadDraftNotes(contact.id, contact.timezone);
   const { text, escalate } = await generate(
-    buildVoiceSystemPrompt(contact),
-    greetingUserPrompt(job.slot, job.festival)
+    buildVoiceSystemPrompt(contact, notes),
+    greetingUserPrompt(job.slot, job.festival, notes)
   );
   const latencyMs = Date.now() - t0;
 
@@ -112,8 +114,9 @@ export async function processInbound(job: InboundJob) {
   const history = recent.reverse();
 
   const t0 = Date.now();
+  const notes = await loadDraftNotes(contact.id, contact.timezone);
   const { text, escalate, confidence } = await generate(
-    buildVoiceSystemPrompt(contact),
+    buildVoiceSystemPrompt(contact, notes),
     replyUserPrompt(history)
   );
   const latencyMs = Date.now() - t0;

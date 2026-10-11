@@ -9,13 +9,13 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "${RISTE_DB_PORT:-5432}:5432"
 
   riste-redis:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${RISTE_REDIS_PORT:-6379}:6379"
 
   riste-web:
     build: .
