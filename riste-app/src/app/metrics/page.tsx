@@ -1,4 +1,15 @@
 import { prisma } from "@/lib/db";
+import {
+  pilotSummary,
+  reminderOutcome,
+  mentionsPrivateNote,
+  KEEP_TARGET,
+  ACT_TARGET,
+  REMINDER_SENDS_TARGET,
+} from "@/lib/notes/pilot";
+import { buildReadiness, MIN_SAMPLES, type CheckState } from "@/lib/readiness";
+import { getSetting } from "@/lib/settings";
+import PilotControls from "../_components/PilotControls";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +41,93 @@ function Stat({
       {target && <div className="target">{target}</div>}
     </div>
   );
+}
+
+const SENT = ["SENT", "DELIVERED", "READ"] as const;
+const CHECK_ICON: Record<CheckState, string> = { ok: "✅", warn: "⚠️", bad: "❌" };
+
+// Everything counted from the pilot's start only, so earlier testing never skews it.
+async function loadPilot(start: Date | null, now: Date) {
+  const since = { gte: start ?? now };
+  const [pendingSuggestions, kept, dismissed, reminders, reminderMsgs, autoSentEvents] = await Promise.all([
+    prisma.note.count({ where: { status: "PROPOSED" } }),
+    prisma.event.count({ where: { type: "note_kept", createdAt: since } }),
+    prisma.event.count({ where: { type: "note_dismissed", createdAt: since } }),
+    prisma.reminder.findMany({ where: { createdAt: since }, select: { status: true, createdAt: true } }),
+    prisma.message.findMany({
+      where: { reminderId: { not: null }, status: { in: [...SENT] }, createdAt: since },
+      select: { replyReceivedAt: true },
+    }),
+    prisma.event.findMany({
+      where: { type: "auto_sent", messageId: { not: null }, createdAt: since },
+      select: { messageId: true },
+    }),
+  ]);
+
+  // Safety: did anything sent WITHOUT approval mention one of that contact's private notes?
+  const autoSent = await prisma.message.findMany({
+    where: { id: { in: autoSentEvents.map((e) => e.messageId!) }, status: { in: [...SENT] } },
+    select: { body: true, contactId: true },
+  });
+  const privateNotes = autoSent.length
+    ? await prisma.note.findMany({
+        where: { sensitive: true, contactId: { in: [...new Set(autoSent.map((m) => m.contactId))] } },
+        select: { contactId: true, text: true },
+      })
+    : [];
+  const privateMentions = autoSent.filter((m) =>
+    mentionsPrivateNote(m.body, privateNotes.filter((n) => n.contactId === m.contactId).map((n) => n.text))
+  ).length;
+
+  const reminderSends = reminderMsgs.length;
+  return {
+    summary: pilotSummary({
+      kept,
+      dismissed,
+      pendingSuggestions,
+      reminderOutcomes: reminders.map((r) => reminderOutcome(r.status, r.createdAt, now)),
+      reminderSends,
+      reminderSendsReplied: reminderMsgs.filter((m) => m.replyReceivedAt).length,
+      privateMentionsInAutoSent: privateMentions,
+      startedAt: start,
+      now,
+    }),
+    pendingSuggestions,
+    reminderSends,
+    reminderSendsReplied: reminderMsgs.filter((m) => m.replyReceivedAt).length,
+    privateMentions,
+    kept,
+  };
+}
+
+async function loadReadiness(now: Date) {
+  const [beats, lastDraft, contacts, keptNotes] = await Promise.all([
+    prisma.heartbeat.findMany(),
+    prisma.event.findFirst({ where: { type: "draft_created" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+    prisma.contact.findMany({ where: { active: true }, include: { channels: true, toneProfile: true } }),
+    prisma.note.count({ where: { status: { in: ["ACTIVE", "DONE"] } } }),
+  ]);
+  const beat = (key: string) => beats.find((b) => b.key === key) ?? null;
+  const readyContacts = contacts.filter(
+    (c) =>
+      c.channels.some((ch) => ch.consentStatus === "GRANTED" && !ch.optedOutAt) &&
+      (c.toneProfile?.sampleMessages.length ?? 0) >= MIN_SAMPLES
+  ).length;
+  return buildReadiness({
+    env: {
+      smtpUser: process.env.SMTP_USER,
+      smtpPass: process.env.SMTP_PASS,
+      imapHost: process.env.IMAP_HOST,
+      telegramToken: process.env.TELEGRAM_BOT_TOKEN,
+      telegramChat: process.env.TELEGRAM_CHAT_ID,
+    },
+    scheduler: beat("scheduler"),
+    emailPoller: beat("email-poller"),
+    lastDraftAt: lastDraft?.createdAt ?? null,
+    readyContacts,
+    keptNotes,
+    now,
+  });
 }
 
 export default async function Metrics() {
@@ -106,9 +204,71 @@ export default async function Metrics() {
     };
   }
 
+  const now = new Date();
+  const { pilotStartedAt } = await getSetting();
+  const pilot = await loadPilot(pilotStartedAt, now);
+  const readiness = await loadReadiness(now);
+  const ps = pilot.summary;
+  const notReady = readiness.filter((r) => r.state !== "ok").length;
+
   return (
     <>
-      <h2>Validation verdict</h2>
+      <h2>📓 Notebook pilot</h2>
+      <div className={`verdict ${ps.verdict.cls}`}>
+        <h3>{ps.verdict.title}</h3>
+        <p>{ps.verdict.body}</p>
+        {pilotStartedAt && (
+          <p style={{ marginTop: 6 }}>
+            Started{" "}
+            {new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(pilotStartedAt)}. Only
+            activity since then counts.
+          </p>
+        )}
+        <PilotControls started={!!pilotStartedAt} notReady={notReady} />
+      </div>
+      <div className="stats">
+        <Stat
+          num={fmtPct(ps.keepRate)}
+          label="Suggestions you kept"
+          target={`target ≥ ${Math.round(KEEP_TARGET * 100)}% · ${pilot.kept} of ${ps.suggestionDecisions} decided${pilot.pendingSuggestions ? ` · ${pilot.pendingSuggestions} waiting` : ""}`}
+          state={ps.keepRate === null ? undefined : ps.keepGo ? "go" : "no"}
+        />
+        <Stat
+          num={fmtPct(ps.actRate)}
+          label="Reminders you acted on"
+          target={`target ≥ ${Math.round(ACT_TARGET * 100)}% · ${ps.counts.acted} acted, ${ps.counts.dismissed} dismissed, ${ps.counts.ignored} ignored`}
+          state={ps.actRate === null ? undefined : ps.actGo ? "go" : "no"}
+        />
+        <Stat
+          num={String(pilot.reminderSends)}
+          label="Messages sent because of a reminder"
+          target={`target ≥ ${REMINDER_SENDS_TARGET} · ${pilot.reminderSendsReplied} got a reply`}
+          state={pilot.reminderSends === 0 ? undefined : ps.sendsGo ? "go" : undefined}
+        />
+      </div>
+      <div className="stats" style={{ marginTop: 12 }}>
+        <Stat
+          num={String(pilot.privateMentions)}
+          label="Private topics in messages sent without approval"
+          target="target 0"
+          state={ps.safeGo ? "go" : "no"}
+        />
+        <Stat num={String(ps.counts.pending)} label="Reminders waiting for you" />
+        <Stat num={String(ps.counts.snoozed)} label="Reminders snoozed" />
+      </div>
+
+      <h2>Ready for the pilot?</h2>
+      {readiness.map((r) => (
+        <div className="row" key={r.label}>
+          <div style={{ width: 22 }}>{CHECK_ICON[r.state]}</div>
+          <div style={{ flex: 1 }}>
+            <span className="who">{r.label}</span>
+            <div className="meta" style={{ marginTop: 2 }}>{r.detail}</div>
+          </div>
+        </div>
+      ))}
+
+      <h2>Draft quality verdict</h2>
       <div className={`verdict ${verdict.cls}`}>
         <h3>{verdict.title}</h3>
         <p>{verdict.body}</p>

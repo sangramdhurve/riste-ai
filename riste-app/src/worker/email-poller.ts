@@ -5,6 +5,7 @@ import { risteQueue } from "@/lib/queue";
 import { recordInboundReply } from "@/lib/analytics";
 import { isOptOut } from "@/lib/optout";
 import { recordAudit } from "@/lib/audit";
+import { beatError, beatOk } from "@/lib/heartbeat";
 
 /**
  * Gmail IMAP reply reader. Every minute it checks INBOX for unseen mail, and
@@ -86,8 +87,15 @@ export function startEmailPoller() {
       } finally {
         lock.release();
       }
+      beatOk("email-poller");
     } catch (err) {
       console.error("[email-poller] error:", err);
+      beatError(
+        "email-poller",
+        (err as { authenticationFailed?: boolean })?.authenticationFailed
+          ? "Sign-in was rejected. Check the email address and app password."
+          : "Couldn't reach the mailbox."
+      );
     } finally {
       try {
         await client.logout();

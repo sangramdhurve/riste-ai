@@ -163,6 +163,34 @@ Riste reads conversations and **suggests** notes; nothing is used until you keep
   instructions…") are skipped; short messages ("ok 👍") are skipped; money/health/grief/conflict
   suggestions are private. The model gets a two-week calendar so "next Monday" resolves correctly.
 
+### Running the pilot (step 4)
+The goal and success criteria are in the architecture doc (§9, Phase 5). **Metrics → Notebook
+pilot** scores them live; **Ready for the pilot?** below it shows what still needs setting up.
+
+Before you start:
+1. **Email:** put your real Gmail address and a Gmail *app password* in `.env`
+   (`SMTP_USER`, `SMTP_PASS`; `IMAP_HOST` for reading replies). "Reading replies" turns green
+   within a minute of the worker restarting.
+2. **Phone notifications:** create a Telegram bot, set `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`,
+   and register the webhook (see *Your controls* above). Approvals and reminders then reach your phone.
+3. **2–3 real contacts:** add them with at least 3 of your real past messages each, and grant
+   consent on their channel. Keep them `SUPERVISED`.
+4. **Keep the worker running** for the whole two weeks ("Background service" must stay green).
+5. Press **Start the two-week pilot**. Only activity after that counts, so testing beforehand never
+   skews the result. You can restart or stop it from the same place.
+
+During the pilot: review **Notes to review** and **Reminders** on the home page as they come in.
+Reminders left open for 7 days count as ignored.
+
+| Criterion | Target | How it's measured |
+|---|---|---|
+| Useful memory | ≥ 70% | suggestions kept ÷ suggestions you decided on |
+| Useful reminders | ≥ 50% | reminders marked done or drafted ÷ (acted + dismissed + ignored); snoozes don't count |
+| Real contact | ≥ 3 | messages drafted from a reminder that actually went out |
+| Safety | 0 | messages sent without your approval that mention one of that contact's private notes |
+
+The verdict waits for 10 suggestion decisions and 10 handled reminders, and is only final after day 14.
+
 ## SMS setup (android-sms-gateway)
 1. Install the app from https://github.com/capcom6/android-sms-gateway on your phone; enable
    **Local server**, set a username/password.
@@ -216,7 +244,8 @@ your approval.
   *Remaining: template-wired WhatsApp greetings.*
 - 🚧 **Phase 5 — relationship notebook:** ✅ step 1 (manual notebook, notes in drafts);
   ✅ step 2 (daily reminders + promise nudges on dashboard and Telegram);
-  ✅ step 3 (notes suggested from messages, kept only when you confirm); next: the pilot.
+  ✅ step 3 (notes suggested from messages, kept only when you confirm);
+  ✅ step 4 tooling (pilot scoring, readiness checks, start/stop); next: run the two-week pilot.
 
 > Recommendation: run each new contact in `SUPERVISED` for a week, confirm the replies
 > sound like you, then switch to `FULL_AUTO`. Protects the relationships this is built for.

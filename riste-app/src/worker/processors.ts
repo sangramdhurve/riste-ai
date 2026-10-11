@@ -219,6 +219,7 @@ export async function processReminderDraft(job: ReminderDraftJob) {
       confidence,
       status,
       heldReason: escalate ? "escalate" : null,
+      reminderId: r.id,
     },
   });
   logEvent({

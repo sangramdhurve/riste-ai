@@ -108,6 +108,8 @@ model Message {
   createdAt       DateTime      @default(now())
   sentAt          DateTime?
   notes           Note[] // notebook suggestions read from this message
+  reminder        Reminder?     @relation(fields: [reminderId], references: [id], onDelete: SetNull)
+  reminderId      String? // set when the user asked for this draft from a notebook reminder
 
   @@index([contactId, createdAt])
   @@index([status])
@@ -217,6 +219,7 @@ model Reminder {
   status     ReminderStatus @default(OPEN)
   notifiedAt DateTime?
   actedAt    DateTime?
+  messages   Message[]
   createdAt  DateTime       @default(now())
 
   @@unique([noteId, dueDate])
@@ -236,18 +239,29 @@ model Festival {
 }
 
 model Setting {
-  id                  Int      @id @default(1)
-  killSwitch          Boolean  @default(false)
-  quietHoursStart     String   @default("22:00")
-  quietHoursEnd       String   @default("07:00")
-  defaultAutonomy     Autonomy @default(SUPERVISED)
-  aiProvider          String   @default("ollama")
+  id                  Int       @id @default(1)
+  killSwitch          Boolean   @default(false)
+  quietHoursStart     String    @default("22:00")
+  quietHoursEnd       String    @default("07:00")
+  defaultAutonomy     Autonomy  @default(SUPERVISED)
+  aiProvider          String    @default("ollama")
   // --- Phase 2 consent / anti-spam / disclosure ---
-  requireConsent      Boolean  @default(true) // block sends to non-GRANTED channels
-  maxPerContactPerDay Int      @default(2) // rolling-24h send cap per contact+channel
-  aiDisclosure        Boolean  @default(false) // append a "sent with help from AI" line to greetings
-  disclosureText      String   @default("")
+  requireConsent      Boolean   @default(true) // block sends to non-GRANTED channels
+  maxPerContactPerDay Int       @default(2) // rolling-24h send cap per contact+channel
+  aiDisclosure        Boolean   @default(false) // append a "sent with help from AI" line to greetings
+  disclosureText      String    @default("")
   // --- Phase 5 notebook ---
-  reminderTime        String   @default("09:30") // contact-local time of the daily reminder run
-  updatedAt           DateTime @updatedAt
+  reminderTime        String    @default("09:30") // contact-local time of the daily reminder run
+  pilotStartedAt      DateTime? // the notebook pilot counts only what happens after this
+  updatedAt           DateTime  @updatedAt
+}
+
+// Last-known health of the background loops, for the pilot readiness check.
+// `error` is a short plain-language summary for the operator, never a raw error.
+model Heartbeat {
+  key       String    @id // "scheduler" | "email-poller"
+  okAt      DateTime?
+  errorAt   DateTime?
+  error     String?
+  updatedAt DateTime  @updatedAt
 }

@@ -4,6 +4,7 @@ import { matchSpecialDay } from "@/lib/festivals/match";
 import { localHHMM, localDate } from "@/lib/time";
 import { jobId } from "@/lib/jobid";
 import { getSetting } from "@/lib/settings";
+import { beatOk } from "@/lib/heartbeat";
 
 /**
  * Simple minute-tick scheduler. Every minute it checks each active contact's
@@ -41,6 +42,7 @@ export function startScheduler() {
   const tick = async () => {
     try {
       const { reminderTime } = await getSetting();
+      beatOk("scheduler");
       const contacts = await prisma.contact.findMany();
       for (const c of contacts) {
         // One contact's failure must not stop everyone else's greetings.
