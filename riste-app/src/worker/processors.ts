@@ -91,7 +91,12 @@ export async function processInbound(job: InboundJob) {
     include: { toneProfile: true, channels: true },
   });
   if (!contact || !contact.active) return;
-  const ch = primaryChannel(contact);
+  // Reply on the channel their message actually arrived on (they may have
+  // written on a non-primary channel); fall back to primary only if needed.
+  const ch =
+    contact.channels.find((c) => c.type === incoming.channel && c.isPrimary) ??
+    contact.channels.find((c) => c.type === incoming.channel) ??
+    primaryChannel(contact);
   if (!ch) return;
 
   // Only real conversation: their messages + replies we actually SENT.

@@ -29,12 +29,26 @@ export async function POST(req: Request) {
   });
   const history = recent.reverse();
 
-  const { text, confidence } = await generate(buildVoiceSystemPrompt(contact), replyUserPrompt(history));
+  // A draft with no inbound conversation behind it is a greeting, not a reply —
+  // re-drafting it as a "reply" would lose the greeting intent entirely.
+  const isReply = history.some((m) => m.direction === "IN");
+  const userPrompt = isReply
+    ? replyUserPrompt(history)
+    : `Rewrite this message with fresh wording — same intent, same warmth, similar length:\n"${msg.body}"`;
+
+  const { text, escalate, confidence } = await generate(buildVoiceSystemPrompt(contact), userPrompt);
   // The fresh draft becomes the new baseline, so a later edit-distance measures
   // against the AI's most recent attempt, not a discarded earlier one.
+  // If the new draft escalates, hold it for a human instead of quietly queueing it.
   const updated = await prisma.message.update({
     where: { id },
-    data: { body: text, originalBody: text, confidence, status: "AWAITING_APPROVAL" },
+    data: {
+      body: text,
+      originalBody: text,
+      confidence,
+      status: escalate ? "HELD" : "AWAITING_APPROVAL",
+      heldReason: escalate ? "escalate" : null,
+    },
   });
   logEvent({
     type: "regenerated",

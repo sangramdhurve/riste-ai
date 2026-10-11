@@ -29,7 +29,9 @@ services:
   riste-worker:
     build: .
     restart: unless-stopped
-    command: npm run worker
+    # Apply pending migrations before starting, so a fresh deploy never runs
+    # against an empty/stale schema (web only reads; worker owns the schema).
+    command: sh -c "npx prisma migrate deploy && npm run worker"
     env_file: .env
     depends_on: [riste-db, riste-redis]
 

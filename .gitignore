@@ -1,0 +1,4 @@
+
+# generated knowledge graph (rebuilt by git post-commit hook)
+graphify-out/
+.claude/settings.local.json
